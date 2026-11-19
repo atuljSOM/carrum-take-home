@@ -1,0 +1,27 @@
+memo_id,program_id,billing_month,adjustment_usd,reason,posted_date
+CM-10444,PRG-205,2026-01,-1021.66,savings guarantee true-up,2026-02-08
+CM-10498,PRG-209,2026-05,-1613.28,performance guarantee credit,2026-06-12
+CM-10429,PRG-203,2026-04,-2124.18,savings guarantee true-up,2026-05-13
+CM-10472,PRG-207,2026-01,-5734.91,invoice correction,2026-02-16
+CM-10419,PRG-202,2026-03,-8467.88,invoice correction,2026-04-15
+CM-10443,PRG-204,2026-05,2147.07,invoice correction,2026-06-11
+CM-10452,PRG-205,2026-04,-3511.86,invoice correction,2026-05-09
+CM-10442,PRG-204,04/2026,-9478.64,goodwill credit,2026-05-12
+CM-10427,PRG-203,2026-01,-3590.93,savings guarantee true-up,2026-02-10
+CM-10506,PRG-210,2026-05,8684.16,performance guarantee credit,2026-06-12
+CM-10415,PRG-202,2026-01,-7349.8,goodwill credit,2026-02-05
+CM-10420,PRG-202,2026-06,-5785.89,invoice correction,2026-07-17
+CM-10507,PRG-210,2026-06,-3883.4,goodwill credit,2026-07-20
+CM-10479,PRG-207,2026-02,-6971.76,savings guarantee true-up,2026-03-08
+CM-10405,PRG-201,2026-02,-7958.92,performance guarantee credit,2026-03-13
+CM-10777,PRG-203,2026-06,-42500.0,savings guarantee true-up,2026-07-14
+CM-10491,PRG-209,2026-04,-5039.37,goodwill credit,2026-05-16
+CM-10512,PRG-211,2026-05,5814.71,performance guarantee credit,2026-06-15
+CM-10491,PRG-209,2026-04,-5039.37,goodwill credit,2026-05-16
+CM-10435,PRG-203,2026-06,-4924.68,savings guarantee true-up,2026-07-20
+CM-10408,PRG-201,2026-04,-7616.75,savings guarantee true-up,2026-05-10
+CM-10458,PRG-205,2026-5,-5052.82,savings guarantee true-up,2026-06-15
+CM-10464,PRG-206,2026-01,-1771.34,performance guarantee credit,2026-02-17
+CM-10486,PRG-208,2026-05,-3692.88,goodwill credit,2026-06-11
+CM-10483,PRG-208,2026-01,-1187.77,invoice correction,2026-02-07
+CM-10812,PRG-299,2026-05,-3150.0,performance guarantee credit,2026-06-18
