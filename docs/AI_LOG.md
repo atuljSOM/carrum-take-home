@@ -63,3 +63,9 @@
 - **Asked:** build the models agreed in the brainstorm; tests and a memo-level fact deferred
 - **Did:** recorded the modelling decisions before building (now in the model docs); built 5 silver staging models, 4 gold dims, 2 gold facts and the employer × month revenue aggregate, with descriptions and grain tests; asked me to settle one conflict (late-posted memos) rather than pick
 - **Checked:** `dbt build` and `dbt docs generate` pass on a scratch database; ran each build-plan check and reconciled case revenue, the aggregate and platform-fee months against independent queries
+
+### 11. Unit tests for business rules
+
+- **Asked:** dbt unit tests (mocked inputs) for every business rule and data-issue fix built so far, without changing model SQL
+- **Did:** added unit tests to the silver and gold yml, one rule each with edge cases (as-of boundaries, inclusive fee windows, partial months, exclusion precedence); left rules the brief and docs don't settle as open questions instead of encoding a guess
+- **Checked:** `dbt build` passes; mutation-checked every test (broke the covered logic, confirmed the test failed, restored the SQL)

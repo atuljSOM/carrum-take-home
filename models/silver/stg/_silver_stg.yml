@@ -2,7 +2,7 @@ version: 2
 
 # Silver staging: typed, parsed and exactly-deduplicated copies of each bronze model.
 # One row per distinct source record. Rows are flagged, never filtered.
-# Grain tests only for now; the full silver test design is still to come.
+# Data tests below cover grain only for now; unit tests at the end cover each data-issue fix.
 
 models:
   - name: silver_stg_salesforce_accounts
@@ -67,3 +67,144 @@ models:
         data_tests: [not_null]
       - name: is_posted_after_as_of
         description: Memo posted after var('as_of_date'). Still included in revenue (flagged).
+
+# ------------------------------------------------------------------ unit tests
+# Mocked-input tests of the data-issue fixes in silver. Each test proves one rule with the fewest
+# rows; columns a test does not name are null. Data tests on the real extract live above and in bronze.
+unit_tests:
+  - name: ut_stg_accounts_name_trimmed
+    description: Account names are trimmed (EMP-102 arrives with a trailing space).
+    model: silver_stg_salesforce_accounts
+    given:
+      - input: ref('bronze_salesforce_accounts')
+        rows:
+          - {account_id: EMP-102, account_name: "Acme Corp ", parent_account_id: EMP-102}
+    expect:
+      rows:
+        - {account_id: EMP-102, account_name: Acme Corp}
+
+  - name: ut_stg_fee_schedule_discount_blank_is_null_and_scale_kept
+    description: >
+      A blank or whitespace discount becomes null; an entered discount is kept exactly as entered
+      (12.0 stays 12.0; the scale is resolved in gold, not here).
+    model: silver_stg_contract_fee_schedule
+    given:
+      - input: ref('bronze_contract_fee_schedule')
+        rows:
+          - {fee_id: FEE-1, discount_pct: ""}
+          - {fee_id: FEE-2, discount_pct: " "}
+          - {fee_id: FEE-3, discount_pct: "12.0"}
+          - {fee_id: FEE-4, discount_pct: "0.1"}
+    expect:
+      rows:
+        - {fee_id: FEE-1, discount_pct_raw: null}
+        - {fee_id: FEE-2, discount_pct_raw: null}
+        - {fee_id: FEE-3, discount_pct_raw: 12.0}
+        - {fee_id: FEE-4, discount_pct_raw: 0.1}
+
+  - name: ut_stg_episodes_exact_duplicates_collapsed
+    description: >
+      Two identical status records collapse to one with source_row_count 2. A record for the same
+      episode at a different timestamp is a real status change and is kept.
+    model: silver_stg_care_platform_episodes
+    given:
+      - input: ref('bronze_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, member_id: M-1, provider_id: PRV-1, episode_status: REFERRED,  record_updated_at: "2026-04-01 09:00:00"}
+          - {episode_id: EP-1, member_id: M-1, provider_id: PRV-1, episode_status: REFERRED,  record_updated_at: "2026-04-01 09:00:00"}
+          - {episode_id: EP-1, member_id: M-1, provider_id: PRV-1, episode_status: SCHEDULED, record_updated_at: "2026-04-02 09:00:00"}
+    expect:
+      rows:
+        - {episode_record_id: "EP-1|2026-04-01 09:00:00", episode_status: REFERRED,  source_row_count: 2, is_duplicated_in_source: true}
+        - {episode_record_id: "EP-1|2026-04-02 09:00:00", episode_status: SCHEDULED, source_row_count: 1, is_duplicated_in_source: false}
+
+  - name: ut_stg_episodes_surgery_date_both_formats
+    description: >
+      surgery_date parses ISO and MM/DD/YYYY. 04/05/2026 is ambiguous and must read month first
+      (5 April). A blank date stays null with no source format.
+    model: silver_stg_care_platform_episodes
+    given:
+      - input: ref('bronze_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, surgery_date: "2026-04-05", record_updated_at: "2026-04-01 09:00:00"}
+          - {episode_id: EP-2, surgery_date: "04/05/2026", record_updated_at: "2026-04-01 09:00:00"}
+          - {episode_id: EP-3, surgery_date: null,         record_updated_at: "2026-04-01 09:00:00"}
+    expect:
+      rows:
+        - {episode_id: EP-1, surgery_date: 2026-04-05, surgery_date_source_format: YYYY-MM-DD}
+        - {episode_id: EP-2, surgery_date: 2026-04-05, surgery_date_source_format: MM/DD/YYYY}
+        - {episode_id: EP-3, surgery_date: null,       surgery_date_source_format: null}
+
+  - name: ut_stg_episodes_recorded_after_as_of_boundary
+    description: >
+      A record written any time on the as-of date (even 23:59:59) is on or before it; the first
+      instant of the next day is after it.
+    model: silver_stg_care_platform_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('bronze_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, record_updated_at: "2026-06-30 23:59:59"}
+          - {episode_id: EP-2, record_updated_at: "2026-07-01 00:00:00"}
+    expect:
+      rows:
+        - {episode_id: EP-1, is_recorded_after_as_of: false}
+        - {episode_id: EP-2, is_recorded_after_as_of: true}
+
+  - name: ut_stg_episodes_test_record_flag
+    description: A record is a test record when the provider is PRV-TEST or the member is TEST-*; either alone is enough.
+    model: silver_stg_care_platform_episodes
+    given:
+      - input: ref('bronze_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, provider_id: PRV-TEST, member_id: M-1,       record_updated_at: "2026-04-01 09:00:00"}
+          - {episode_id: EP-2, provider_id: PRV-1,    member_id: TEST-0001, record_updated_at: "2026-04-01 09:00:00"}
+          - {episode_id: EP-3, provider_id: PRV-1,    member_id: M-3,       record_updated_at: "2026-04-01 09:00:00"}
+    expect:
+      rows:
+        - {episode_id: EP-1, is_test_record: true}
+        - {episode_id: EP-2, is_test_record: true}
+        - {episode_id: EP-3, is_test_record: false}
+
+  - name: ut_stg_adjustments_exact_duplicates_collapsed
+    description: A memo delivered twice (identical rows) collapses to one row with source_row_count 2.
+    model: silver_stg_netsuite_billing_adjustments
+    given:
+      - input: ref('bronze_netsuite_billing_adjustments')
+        rows:
+          - {memo_id: CM-1, program_id: PRG-1, billing_month: "2026-04", adjustment_usd: "-500.00", posted_date: "2026-04-10"}
+          - {memo_id: CM-1, program_id: PRG-1, billing_month: "2026-04", adjustment_usd: "-500.00", posted_date: "2026-04-10"}
+    expect:
+      rows:
+        - {memo_id: CM-1, adjustment_usd: -500.00, source_row_count: 2, is_duplicated_in_source: true}
+
+  - name: ut_stg_adjustments_billing_month_formats
+    description: billing_month in YYYY-MM, YYYY-M and MM/YYYY all parse to the first of the month.
+    model: silver_stg_netsuite_billing_adjustments
+    given:
+      - input: ref('bronze_netsuite_billing_adjustments')
+        rows:
+          - {memo_id: CM-1, billing_month: "2026-04", posted_date: "2026-04-10"}
+          - {memo_id: CM-2, billing_month: "2026-5",  posted_date: "2026-04-10"}
+          - {memo_id: CM-3, billing_month: "04/2026", posted_date: "2026-04-10"}
+    expect:
+      rows:
+        - {memo_id: CM-1, billing_month: 2026-04-01, billing_month_source_format: YYYY-MM}
+        - {memo_id: CM-2, billing_month: 2026-05-01, billing_month_source_format: YYYY-M}
+        - {memo_id: CM-3, billing_month: 2026-04-01, billing_month_source_format: MM/YYYY}
+
+  - name: ut_stg_adjustments_posted_after_as_of_boundary
+    description: A memo posted on the as-of date is not late; one posted the next day is.
+    model: silver_stg_netsuite_billing_adjustments
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('bronze_netsuite_billing_adjustments')
+        rows:
+          - {memo_id: CM-1, billing_month: "2026-06", posted_date: "2026-06-30"}
+          - {memo_id: CM-2, billing_month: "2026-06", posted_date: "2026-07-01"}
+    expect:
+      rows:
+        - {memo_id: CM-1, is_posted_after_as_of: false}
+        - {memo_id: CM-2, is_posted_after_as_of: true}

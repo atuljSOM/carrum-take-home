@@ -54,6 +54,7 @@ Every model belongs to one layer; schema = layer.
 - Answer queries (Part 2, Part 3) read gold only.
 - `int_` only when a model is reused; otherwise use CTEs.
 - Custom generic tests: `tests/generic/`.
+- Unit tests: in the model's existing yml, under `unit_tests:`. One rule per test, fewest rows, edge cases (as-of date, window boundaries, nulls); pin `as_of_date` in `overrides`. Mutation-check each new test (break the logic, see it fail, revert). Don't encode a guess for a rule the brief or the model docs don't settle: ask.
 
 ## Decisions
 

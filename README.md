@@ -33,6 +33,16 @@ There are 10, all intentional: known defects in the raw extracts, each with its 
 `models/bronze/_bronze.yml`. A changed count means the data changed. Silver and gold handle each
 one (parse, dedup, or flag and exclude).
 
+### Tests
+
+`dbt build` runs every test. Data tests check the real extracts; unit tests (`unit_tests:` in each
+layer's yml) check business-rule logic on mocked rows.
+
+```bash
+dbt test --select "test_type:unit"
+dbt test --select "test_type:data"
+```
+
 ### Gold models
 
 | Model (physical name) | Grain |
