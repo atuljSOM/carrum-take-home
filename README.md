@@ -58,4 +58,21 @@ dbt test --select "test_type:data"
 Business rules and their edge-case decisions are in each model's header comment and in
 `models/gold/_gold.yml`.
 
-_Run instructions for Part 2 queries, Part 3 and docs to follow._
+## Part 2 answers
+
+The answer queries are dbt analyses in `analyses/`; they read only gold models via `ref()`.
+After `dbt build`, compile them and export each result to `outputs/<analysis>.csv`:
+
+```bash
+dbt compile --select "resource_type:analysis"
+python scripts/export_answers.py
+```
+
+| Question | Query | Output |
+|---|---|---|
+| 2a Q2 2026 revenue by employer and month | `analyses/q2a_revenue_by_employer_q2_2026.sql` | `outputs/q2a_revenue_by_employer_q2_2026.csv` |
+
+The export opens `carrum.duckdb` read-only but still needs any writing session (such as
+`duckdb -ui`) closed.
+
+_Run instructions for Part 3 and docs to follow._

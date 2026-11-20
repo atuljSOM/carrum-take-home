@@ -75,3 +75,9 @@
 - **Asked:** three independent agents, given only the brief and the CSVs, to answer 2a and 2b in plain SQL, then compare their results with the gold marts
 - **Did:** every 2a difference traced to a documented choice, not a bug; all three agents reported completed episodes with no surgery date in their invoice month, and I agreed to switch from excluding them to that fallback, flagged in a new column
 - **Checked:** `dbt build` and `dbt docs generate` pass; the new unit test was mutation-checked; with the same choices, gold matches an agent's result for every employer and month to the cent
+
+### 13. Part 2a answer query and export
+
+- **Asked:** build the saved 2a query and its CSV output
+- **Did:** added a dbt analysis that only filters and totals the employer × month mart (month rows, employer Q2 totals, grand total), and a script that exports every compiled analysis to `outputs/`; documented the run steps in the README
+- **Checked:** grand total matches the figure verified after the surgery-date fallback; subtotals are produced by the same query as the month rows; ran from a scratch build because the DuckDB UI held the lock
