@@ -6,7 +6,7 @@ Asking questions of the built data (people or LLMs): see [AGENTS.md](AGENTS.md).
 ## Setup (macOS, clean clone)
 
 ```bash
-git clone <repo-url> carrum-take-home && cd carrum-take-home
+git clone https://github.com/atuljSOM/carrum-take-home.git carrum-take-home && cd carrum-take-home
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export DBT_PROFILES_DIR=.
@@ -14,6 +14,8 @@ dbt build
 ```
 
 Writes `carrum.duckdb` in the repo root. Close other DuckDB sessions on it first (single writer).
+Optional: the DuckDB CLI (`brew install duckdb`) for ad-hoc SQL and `duckdb < scripts/profile_raw_csvs.sql`
+(the raw-data profiling); `AGENTS.md` also gives a Python fallback.
 
 Docs: `dbt docs generate && dbt docs serve`.
 

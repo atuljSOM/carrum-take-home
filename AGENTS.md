@@ -12,7 +12,12 @@ One shell command per query, from the repo root (no virtualenv needed):
 duckdb -readonly carrum.duckdb -c "select ... from gold.agg_revenue_employer_monthly ..."
 ```
 
-`-readonly` lets several sessions read at once and never changes the file.
+`-readonly` lets several sessions read at once and never changes the file. Without the DuckDB
+CLI, use the project's virtualenv instead (same read-only access):
+
+```bash
+.venv/bin/python -c "import duckdb; duckdb.connect('carrum.duckdb', read_only=True).sql(\"select ... from gold.agg_revenue_employer_monthly ...\").show()"
+```
 
 ## Query only these four tables
 
