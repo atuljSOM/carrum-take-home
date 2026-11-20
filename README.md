@@ -30,7 +30,22 @@ Data flows bronze → silver → gold. Each layer is a DuckDB schema and reads o
 ### Expected warnings
 
 There are 10, all intentional: known defects in the raw extracts, each with its count in
-`models/bronze/_bronze.yml`. A changed count means the data changed. The "config paths match no
-models" warning clears once silver and gold have models.
+`models/bronze/_bronze.yml`. A changed count means the data changed. Silver and gold handle each
+one (parse, dedup, or flag and exclude).
+
+### Gold models
+
+| Model (physical name) | Grain |
+|---|---|
+| `gold.dim_employers` | one row per Salesforce account, mapped to its ultimate-parent employer |
+| `gold.dim_programs` | one row per employer benefit program |
+| `gold.dim_fee_lines` | one row per contract fee line, with the normalized discount |
+| `gold.dim_months` | one row per calendar month (spine for platform fees) |
+| `gold.fact_episodes` | one row per episode, current status as of `as_of_date` |
+| `gold.fact_revenue_monthly` | one row per revenue component × fee line (or program, for adjustments) × month |
+| `gold.agg_revenue_employer_monthly` | one row per employer × month (Part 2a) |
+
+Business rules and their edge-case decisions are in each model's header comment and in
+`models/gold/_gold.yml`.
 
 _Run instructions for Part 2 queries, Part 3 and docs to follow._

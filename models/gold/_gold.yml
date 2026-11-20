@@ -1,0 +1,171 @@
+version: 2
+
+# Gold: business rules, conformed dimensions and the marts that answer questions.
+# Query this schema only. Grain tests only for now; business-rule and reconciliation tests to come.
+
+models:
+  # ------------------------------------------------------------------ dimensions
+  - name: gold_dim_employers
+    description: >
+      Grain: one row per Salesforce account. Maps every account to its employer, the ultimate
+      parent in the account hierarchy, so subsidiaries, unions and duplicate accounts report as one
+      employer. An account whose parent does not exist is its own employer (is_parent_missing).
+    columns:
+      - name: account_id
+        description: Salesforce account ID.
+        data_tests: [not_null, unique]
+      - name: employer_id
+        description: Account ID of the ultimate parent. Use this to report "one employer, one line".
+        data_tests: [not_null]
+      - name: employer_name
+        description: Name of the ultimate parent account.
+      - name: hierarchy_depth
+        description: Levels between the account and its employer (0 = the account is the employer).
+      - name: is_parent_missing
+        description: The account's parent_account_id does not exist in Salesforce.
+
+  - name: gold_dim_programs
+    description: >
+      Grain: one row per employer benefit program. Hub dimension: fee lines and NetSuite
+      adjustments attach here; carries the employer roll-up.
+    columns:
+      - name: program_id
+        description: Salesforce program ID.
+        data_tests: [not_null, unique]
+      - name: employer_id
+        description: Ultimate parent employer of the program's account.
+
+  - name: gold_dim_months
+    description: >
+      Grain: one row per calendar month across every fee line's effective window. Month spine for
+      platform fees, which are earned every effective month.
+    columns:
+      - name: month_start
+        description: First day of the month.
+        data_tests: [not_null, unique]
+      - name: year_quarter
+        description: Calendar quarter label, e.g. 2026-Q2.
+      - name: is_on_or_before_as_of
+        description: The month starts on or before var('as_of_date').
+
+  - name: gold_dim_fee_lines
+    description: >
+      Grain: one row per contract fee line, with its program and employer and the normalized
+      discount. Discount rule: blank = 0; values above 1 are whole percents (divided by 100);
+      values from 0 to 1 are fractions. Applies to case-rate and platform-fee lines alike.
+    columns:
+      - name: fee_id
+        description: Fee line ID.
+        data_tests: [not_null, unique]
+      - name: fee_type
+        description: CASE_RATE (per completed episode) or PLATFORM_FEE (per effective month).
+      - name: employer_id
+        description: Employer the fee line rolls up to; 'UNATTRIBUTED' when it has no valid program.
+      - name: rate_usd
+        description: Contract rate in USD, before discount.
+      - name: discount_pct_raw
+        description: Discount as entered in the contracting tool.
+      - name: discount_rate
+        description: Discount as a fraction (0.12 = 12%) after the discount rule.
+      - name: discount_rule_applied
+        description: Which branch of the discount rule produced discount_rate.
+      - name: projected_episodes
+        description: Projected episodes over the full effective window (case-rate lines only).
+      - name: effective_months
+        description: Calendar months in the effective window.
+      - name: is_orphan
+        description: No program, or a program missing from Salesforce.
+
+  # ------------------------------------------------------------------ facts
+  - name: gold_fact_episodes
+    description: >
+      Grain: one row per episode with at least one status record on or before var('as_of_date').
+      Current status is the latest record on or before that date; later records (written after
+      the 2026-06-30 extract date, so not trustworthy as of it) are ignored for status and
+      summarized in later_record_count / latest_status_in_extract.
+      is_revenue_eligible marks completed episodes that earn the case rate. A completed episode is
+      excluded, in this order, when it is a test record, bills to a fee line not in the fee
+      schedule, bills to a platform-fee line (not remapped to a case-rate line), has no surgery
+      date (no fallback to invoice_month), or its surgery date is outside its fee line's effective
+      window. Episodes on orphan fee lines stay eligible and roll up to 'UNATTRIBUTED'.
+    columns:
+      - name: episode_id
+        description: Episode ID.
+        data_tests: [not_null, unique]
+      - name: current_status
+        description: Status of the latest record on or before var('as_of_date').
+      - name: surgery_month
+        description: >
+          First day of the surgery month. This is the reporting month for case revenue (not
+          invoice_month). Null when the surgery date is missing; such episodes earn no revenue.
+      - name: invoice_month
+        description: Month invoiced by the upstream billing job. Informational; not used for reporting.
+      - name: employer_id
+        description: Employer via fee line -> program -> account roll-up; 'UNATTRIBUTED' for orphan fee lines; null for fee lines not in the schedule.
+      - name: is_status_changed_after_as_of
+        description: The latest record in the extract (after as_of_date) has a different status than current_status.
+      - name: revenue_exclusion_reason
+        description: Why a completed episode earns no case revenue. Null when eligible or not completed.
+      - name: is_revenue_eligible
+        description: Completed and not excluded. Exactly the episodes counted in case revenue.
+
+  - name: gold_fact_revenue_monthly
+    description: >
+      Grain: one row per revenue_component x source x revenue_month (source = fee line for
+      CASE_RATE / PLATFORM_FEE, program for ADJUSTMENT), months on or before the as-of month.
+      CASE_RATE = eligible completed episodes in the surgery month x rate x (1 - discount).
+      PLATFORM_FEE = rate x (1 - discount) per effective month, in full, including months before
+      the program's go-live date (the rule keys on the fee line's window). ADJUSTMENT = NetSuite memos for the
+      program and billing month, added after discount; memos posted after as_of_date are included
+      and counted separately.
+    columns:
+      - name: revenue_line_id
+        description: component | fee_id or program_id | YYYY-MM.
+        data_tests: [not_null, unique]
+      - name: revenue_component
+        description: CASE_RATE, PLATFORM_FEE or ADJUSTMENT.
+      - name: revenue_month
+        description: First day of the month the revenue is reported in.
+      - name: employer_id
+        description: Ultimate parent employer; 'UNATTRIBUTED' when the fee line or memo has no valid program.
+      - name: episode_count
+        description: Eligible completed episodes (CASE_RATE rows only).
+      - name: memo_count
+        description: Distinct NetSuite memos (ADJUSTMENT rows only).
+      - name: gross_usd
+        description: Before discount. Episodes x rate, the platform rate, or the memo total.
+      - name: discount_usd
+        description: gross_usd x discount_rate, rounded to cents. Zero for adjustments.
+      - name: net_revenue_usd
+        description: gross_usd - discount_usd. Sum this for recognized revenue.
+      - name: adjustment_usd_posted_after_as_of
+        description: Part of an ADJUSTMENT row's amount posted after var('as_of_date').
+
+  # ------------------------------------------------------------------ aggregates
+  - name: gold_agg_revenue_employer_monthly
+    description: >
+      Grain: one row per employer x month, every month from the first fee line start through the
+      as-of month. The CFO view: one employer is one line (ultimate parent), components net of
+      discount, adjustments added after discount. Answers Part 2a when filtered to 2026-Q2.
+    columns:
+      - name: employer_month_id
+        description: employer_id | YYYY-MM.
+        data_tests: [not_null, unique]
+      - name: employer_id
+        description: Ultimate parent account ID, or 'UNATTRIBUTED'.
+      - name: employer_name
+        description: Ultimate parent account name.
+      - name: revenue_month
+        description: First day of the reporting month (surgery month for case revenue).
+      - name: completed_episodes
+        description: Revenue-eligible completed episodes in the month.
+      - name: case_revenue_usd
+        description: Case-rate revenue net of discount.
+      - name: platform_fee_revenue_usd
+        description: Platform-fee revenue net of discount.
+      - name: adjustments_usd
+        description: NetSuite adjustments for the employer's programs in the billing month.
+      - name: total_revenue_usd
+        description: case_revenue_usd + platform_fee_revenue_usd + adjustments_usd. Recognized revenue.
+      - name: adjustments_posted_after_as_of_usd
+        description: Part of adjustments_usd posted after var('as_of_date') (included, flagged).

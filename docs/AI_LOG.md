@@ -51,3 +51,15 @@
 - **Asked:** commit the scaffold and bronze models on a branch and open a PR
 - **Did:** two commits on `scaffold-bronze-layer` (docs, then scaffold); PR #1 with What / Why / Testing
 - **Checked:** `dbt parse` clean before committing; commits use the personal identity; `notes/` stayed out
+
+### 9. Whiteboard: business flow and dimensional model
+
+- **Asked:** before building, sketch the business flow to the revenue answer and a rough dimensional model; brainstorm only, no file changes
+- **Did:** drew the employer → program → fee line → episode / adjustment flow, a star schema around shared conformed dims and two facts, and bronze → silver → gold lineage with one thin aggregate per question
+- **Checked:** grains and joins match the raw-data profiling and the brief's business rules; the open design choice (memo-level adjustment fact) was left for me to decide
+
+### 10. Silver and gold models for 2a
+
+- **Asked:** build the models agreed in the brainstorm; tests and a memo-level fact deferred
+- **Did:** recorded the modelling decisions before building (now in the model docs); built 5 silver staging models, 4 gold dims, 2 gold facts and the employer × month revenue aggregate, with descriptions and grain tests; asked me to settle one conflict (late-posted memos) rather than pick
+- **Checked:** `dbt build` and `dbt docs generate` pass on a scratch database; ran each build-plan check and reconciled case revenue, the aggregate and platform-fee months against independent queries

@@ -1,0 +1,69 @@
+version: 2
+
+# Silver staging: typed, parsed and exactly-deduplicated copies of each bronze model.
+# One row per distinct source record. Rows are flagged, never filtered.
+# Grain tests only for now; the full silver test design is still to come.
+
+models:
+  - name: silver_stg_salesforce_accounts
+    description: "Grain: one row per Salesforce account. Names and IDs trimmed; hierarchy kept as delivered."
+    columns:
+      - name: account_id
+        description: Salesforce account ID.
+        data_tests: [not_null, unique]
+      - name: parent_account_id
+        description: Parent account as delivered. Top-level accounts point to themselves; may reference an account that does not exist.
+
+  - name: silver_stg_salesforce_programs
+    description: "Grain: one row per employer benefit program. Dates cast."
+    columns:
+      - name: program_id
+        description: Salesforce program ID.
+        data_tests: [not_null, unique]
+
+  - name: silver_stg_contract_fee_schedule
+    description: "Grain: one row per contract fee line. Types cast; discount kept as entered (scale resolved in gold)."
+    columns:
+      - name: fee_id
+        description: Fee line ID.
+        data_tests: [not_null, unique]
+      - name: program_id
+        description: Program the fee line belongs to. Null for 2 orphan lines in this extract.
+      - name: discount_pct_raw
+        description: Discount exactly as entered. Mixes fractions (0.1) and whole percents (12.0); null when blank.
+
+  - name: silver_stg_care_platform_episodes
+    description: >
+      Grain: one row per distinct episode status record (the status-change log). Exact duplicate
+      rows collapsed (source_row_count keeps the delivered copies); surgery_date parsed from ISO and
+      MM/DD/YYYY. Current status is chosen in gold_fact_episodes, not here.
+    columns:
+      - name: episode_record_id
+        description: episode_id | record_updated_at. Unique per status record.
+        data_tests: [not_null, unique]
+      - name: surgery_date
+        description: >
+          Surgery date parsed from either source format. MM/DD/YYYY is read month first (US
+          convention; the record timestamps confirm it for every such row). Null when the source is blank.
+      - name: surgery_date_source_format
+        description: Format the surgery date arrived in (YYYY-MM-DD or MM/DD/YYYY).
+      - name: source_row_count
+        description: Number of identical copies of this record in the extract (1 = no duplicate).
+      - name: is_recorded_after_as_of
+        description: Record written after var('as_of_date'). Kept here; ignored for current status in gold.
+      - name: is_test_record
+        description: Provider PRV-TEST or member TEST-* (synthetic test data). Excluded from revenue in gold.
+
+  - name: silver_stg_netsuite_billing_adjustments
+    description: >
+      Grain: one row per distinct NetSuite memo. Exact duplicate rows collapsed; billing_month parsed
+      from YYYY-MM, YYYY-M and MM/YYYY to the first of the month.
+    columns:
+      - name: memo_id
+        description: NetSuite memo ID.
+        data_tests: [not_null, unique]
+      - name: billing_month
+        description: First day of the month the adjustment applies to.
+        data_tests: [not_null]
+      - name: is_posted_after_as_of
+        description: Memo posted after var('as_of_date'). Still included in revenue (flagged).
