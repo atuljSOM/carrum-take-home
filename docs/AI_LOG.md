@@ -202,9 +202,3 @@
 - **Did:** one-line eval result in the findings; corrected the log's numbering and agent count; README now has the docs step, why the CSVs are sources not seeds, and the Part 3 pointers
 - **Checked:** see the clean-clone run in this entry's commit
 
-
-### 34. Submission
-
-- **Asked:** merge to main, make the repository public, and log the steps
-- **Did:** pushed the work branch and opened PR #2 into `main` (I merged it myself: the assistant's safety check blocks merges to `main`); made the repository public
-- **Checked:** cloned `main` from GitHub as a reviewer would, ran the README commands in a fresh virtualenv: `dbt build` passes with the 10 expected warnings, docs generate, and all three answer CSVs match the committed ones; an anonymous clone works without any login
