@@ -17,12 +17,13 @@ vars:
 
 models:
   carrum:
-    staging:
-      +schema: staging
-      +materialized: view
-    intermediate:
-      +schema: intermediate
-      +materialized: view
-    marts:
-      +schema: marts
+    # Medallion layers; the physical schema is the layer name (see macros/generate_schema_name.sql).
+    bronze:
+      +schema: bronze
+      +materialized: view    # thin copy of each CSV; reads the files in place
+    silver:
+      +schema: silver
+      +materialized: table   # tables, so queries work without the CSVs on a relative path
+    gold:
+      +schema: gold
       +materialized: table
