@@ -40,3 +40,4 @@ python scripts/export_answers.py      # writes outputs/<analysis>.csv
 | Question | Query | Output |
 |---|---|---|
 | 2a | `analyses/q2a_revenue_by_employer_q2_2026.sql` | `outputs/q2a_revenue_by_employer_q2_2026.csv` |
+| 2b | `analyses/q2b_utilization_risk.sql` | `outputs/q2b_utilization_risk.csv` |
