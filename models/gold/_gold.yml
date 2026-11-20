@@ -234,3 +234,31 @@ models:
         description: The window ended on or before the as-of date; the ratio is final, not a pace.
       - name: is_go_live_after_window_start
         description: The program went live after the fee line started, so early months had no live program.
+
+  # ------------------------------------------------------------------ reports
+  - name: gold_rpt_data_quality_register
+    description: >
+      Grain: one row per data-quality issue. Answers Part 2c. Counts and dollar amounts are
+      computed from silver and gold on every build; text columns are hand-written. Impact columns
+      are signed: (naive handling in impact_basis) - (as modelled), for the as-of quarter.
+    columns:
+      - name: issue_id
+        description: Stable ID (DQ-nn).
+        data_tests: [not_null, unique]
+      - name: rows_affected
+        description: Records, memos, fee lines or accounts with the issue.
+      - name: q2_revenue_impact_usd
+        description: How much as-of-quarter revenue would move under the naive handling in impact_basis. Null if not quantifiable.
+      - name: q2_revenue_misattributed_usd
+        description: Revenue that would land on the wrong employer line (total unchanged).
+      - name: pacing_completed_impact
+        description: Change in completed episodes counted toward pacing (2b) under the naive handling.
+      - name: impact_basis
+        description: The naive handling the impact is measured against.
+      - name: handling
+        description: What the model does about it.
+      - name: caught_by_test
+        description: dbt test(s) that detect or pin the handling; 'none' where only this register reports it.
+      - name: fix_belongs
+        description: Where the real fix belongs (upstream system, model, or a business decision).
+

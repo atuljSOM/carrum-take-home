@@ -111,3 +111,9 @@
 - **Asked:** whether the yml was getting bloated, then clean up
 - **Did:** rules now live once, in the yml; SQL headers reduced to the grain line; unit tests moved to their own files; the two longest descriptions cut to what and how, with the why kept in my notes
 - **Checked:** build and docs generate unchanged; both answer CSVs regenerate identically
+
+### 19. Part 2c data quality register
+
+- **Asked:** build gold model for one row per issue
+- **Did:** added a gold report model with one row per issue: counts and dollar impacts computed from the models on every build, hand-written text for detection, handling, test and where the fix belongs; added the 2c answer query
+- **Checked:** spot-checked the larger impacts against the earlier profiling and broke one down independently until it tied to the cent; the computed figure exposed an error in my own earlier pacing estimate, now corrected in my notes
