@@ -4,6 +4,16 @@ For an LLM or analyst answering Finance and Client Success questions from `carru
 (build it with the README). Definitions live on each table and column: read them with
 `select comment from duckdb_tables()` / `duckdb_columns()`, or in `models/gold/_gold.yml`.
 
+## How to query
+
+One shell command per query, from the repo root (no virtualenv needed):
+
+```bash
+duckdb -readonly carrum.duckdb -c "select ... from gold.agg_revenue_employer_monthly ..."
+```
+
+`-readonly` lets several sessions read at once and never changes the file.
+
 ## Query only these four tables
 
 | Question is about | Table (schema `gold`) | Grain |

@@ -425,4 +425,4 @@ models:
       - name: detection
         description: How it was detected.
       - name: detail
-        description: Specifics computed on the build (affected IDs, before/after pacing, or the potential amount).
+        description: Specifics computed on the build (affected IDs with their employer, before/after pacing, or the potential amount).

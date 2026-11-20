@@ -120,9 +120,9 @@
 
 ### 20. Part 3 approach
 
-- **Asked:** whether the optional chatbot should be a React or Streamlit app; then to adapt my team's metric-view convention so an LLM reads only aggregate tables
-- **Did:** pointed out the chatbot earns no credit and the scored work is the repo itself; proposed definitions on the aggregate tables, comments written into the database, and one routing file
-- **Checked:** read the brief's Part 3 wording and a production metric view before proposing
+- **Asked:** to follow a metric-view convention directed to (named dimensions and measures, each with a definition), with an LLM reading only aggregate tables
+- **Did:** proposed definitions on the aggregate tables, comments written into the database, and one routing file
+- **Checked:** read the brief's Part 3 wording and the metric-view example I pointed to before proposing
 
 ### 21. LLM-facing layer
 
@@ -132,6 +132,18 @@
 
 ### 22. Full definitions on the LLM-facing tables
 
-- **Asked:** whether the definitions were actually in the database
+- **Asked:** whether the definitions were actually missing in the database
 - **Did:** found 20 columns on three LLM-facing tables with no definition; documented them and added a test that fails if any column on those tables lacks a comment in the database
 - **Checked:** every column on the four tables now has a comment in DuckDB; removing one description made the new test fail
+
+### 23. Part 3 eval harness
+
+- **Asked:** a repeatable eval: headless Claude Code on a fresh clone, generic instruction, read-only tools, graded against the marts
+- **Did:** added `eval/` (questions, run script, grader)
+- **Checked:** every question passed; hand-checked two answers to the cent; transcripts showed some runs never queried the database
+
+### 24. Fixes from the eval
+
+- **Asked:** fix the gaps the eval found, in the project, not the instruction
+- **Did:** AGENTS.md shows the read-only query command; the register names the employer behind each flagged memo
+- **Checked:** build passes; only the 2c output changed, and its memos tie to the 2a adjustments

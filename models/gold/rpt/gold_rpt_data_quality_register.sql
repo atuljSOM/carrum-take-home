@@ -38,8 +38,11 @@ memo as (
     select
         m.*,
         m.billing_month between p.q_start and p.q_last_month as in_q,
-        m.program_id in (select program_id from {{ ref('gold_dim_programs') }}) as has_program
+        prg.program_id is not null                                  as has_program,
+        -- named in the detail so a caveat can be tied to the employer in a question
+        coalesce(prg.employer_name, 'Unattributed')                 as employer_name
     from {{ ref('silver_stg_netsuite_billing_adjustments') }} as m
+    left join {{ ref('gold_dim_programs') }} as prg on prg.program_id = m.program_id
     cross join params as p
 ),
 
@@ -212,14 +215,14 @@ metrics as (
         (select sum(source_row_count - 1) from memo),
         (select coalesce(sum(adjustment_usd * (source_row_count - 1)), 0) from memo where in_q),
         null, 0,
-        (select string_agg(memo_id, ', ' order by memo_id) from memo where source_row_count > 1)
+        (select string_agg(memo_id || ' (' || employer_name || ')', ', ' order by memo_id) from memo where source_row_count > 1)
 
     -- DQ-16 billing_month not in YYYY-MM
     union all select 'DQ-16',
         (select count(*) from memo where billing_month_source_format <> 'YYYY-MM'),
         (select -coalesce(sum(adjustment_usd), 0) from memo where in_q and billing_month_source_format <> 'YYYY-MM'),
         null, 0,
-        (select string_agg(memo_id || ' (' || billing_month_source_format || ')', ', ' order by memo_id) from memo where billing_month_source_format <> 'YYYY-MM')
+        (select string_agg(memo_id || ' (' || billing_month_source_format || ', ' || employer_name || ')', ', ' order by memo_id) from memo where billing_month_source_format <> 'YYYY-MM')
 
     -- DQ-17 memo on a program not in Salesforce
     union all select 'DQ-17',
@@ -233,7 +236,7 @@ metrics as (
         (select count(*) from memo where is_posted_after_as_of),
         (select -coalesce(sum(adjustment_usd), 0) from memo where in_q and is_posted_after_as_of),
         null, 0,
-        (select string_agg(memo_id, ', ' order by memo_id) from memo where is_posted_after_as_of)
+        (select string_agg(memo_id || ' ' || adjustment_usd || ' (' || employer_name || ')', ', ' order by memo_id) from memo where is_posted_after_as_of)
 
     -- DQ-19 outlier memo (over 5x the median absolute amount)
     union all select 'DQ-19',
@@ -241,7 +244,7 @@ metrics as (
         (select -coalesce(sum(adjustment_usd), 0) from memo
           where in_q and abs(adjustment_usd) > 5 * (select median(abs(adjustment_usd)) from memo)),
         null, 0,
-        (select string_agg(memo_id || ' ' || adjustment_usd || ' (' || reason || ')', ', ' order by memo_id) from memo
+        (select string_agg(memo_id || ' ' || adjustment_usd || ' (' || employer_name || ', ' || reason || ')', ', ' order by memo_id) from memo
           where abs(adjustment_usd) > 5 * (select median(abs(adjustment_usd)) from memo))
 
     -- DQ-20 "credit" memos with a positive amount
@@ -249,7 +252,7 @@ metrics as (
         (select count(*) from memo where reason like '%credit%' and adjustment_usd > 0),
         (select -2 * coalesce(sum(adjustment_usd), 0) from memo where in_q and reason like '%credit%' and adjustment_usd > 0),
         null, 0,
-        (select string_agg(memo_id || ' +' || adjustment_usd, ', ' order by memo_id) from memo where reason like '%credit%' and adjustment_usd > 0)
+        (select string_agg(memo_id || ' +' || adjustment_usd || ' (' || employer_name || ')', ', ' order by memo_id) from memo where reason like '%credit%' and adjustment_usd > 0)
 
     -- DQ-21 invoice_month lags the surgery month
     union all select 'DQ-21',
