@@ -1,0 +1,428 @@
+version: 2
+
+# Gold: business rules and the marts that answer questions. Query this schema only.
+# Tests: error if a number would silently be wrong; known defects warn once, upstream.
+# Reconciliations: tests/. Unit tests: _gold_unit_tests.yml.
+
+models:
+  # ------------------------------------------------------------------ dimensions
+  - name: gold_dim_employers
+    description: >
+      Internal building block: answer questions from the LLM-facing agg_ and rpt_ tables instead. Grain: one row per Salesforce account. Maps every account to its employer, the ultimate
+      parent in the account hierarchy, so subsidiaries, unions and duplicate accounts report as one
+      employer. An account whose parent does not exist is its own employer (is_parent_missing).
+    columns:
+      - name: account_id
+        description: Salesforce account ID.
+        data_tests: [not_null, unique]
+      - name: employer_id
+        description: Account ID of the ultimate parent. Use this to report "one employer, one line".
+        data_tests: [not_null]
+      - name: employer_name
+        description: Name of the ultimate parent account.
+      - name: hierarchy_depth
+        description: Levels between the account and its employer (0 = the account is the employer).
+      - name: is_parent_missing
+        description: The account's parent_account_id does not exist in Salesforce.
+
+  - name: gold_dim_programs
+    description: >
+      Internal building block: answer questions from the LLM-facing agg_ and rpt_ tables instead. Grain: one row per employer benefit program. Hub dimension: fee lines and NetSuite
+      adjustments attach here; carries the employer roll-up.
+    columns:
+      - name: program_id
+        description: Salesforce program ID.
+        data_tests: [not_null, unique]
+      - name: employer_id
+        description: Ultimate parent employer of the program's account.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('gold_dim_employers')
+                field: account_id
+
+  - name: gold_dim_months
+    description: >
+      Internal building block: answer questions from the LLM-facing agg_ and rpt_ tables instead. Grain: one row per calendar month across every fee line's effective window. Month spine for
+      platform fees, which are earned every effective month.
+    columns:
+      - name: month_start
+        description: First day of the month.
+        data_tests: [not_null, unique]
+      - name: year_quarter
+        description: Calendar quarter label, e.g. 2026-Q2.
+      - name: is_on_or_before_as_of
+        description: The month starts on or before var('as_of_date').
+
+  - name: gold_dim_fee_lines
+    description: >
+      Internal building block: answer questions from the LLM-facing agg_ and rpt_ tables instead. Grain: one row per contract fee line, with its program and employer and the normalized
+      discount. Discount rule: blank = 0; values above 1 are whole percents (divided by 100);
+      values from 0 to 1 are fractions. Applies to case-rate and platform-fee lines alike.
+    columns:
+      - name: fee_id
+        description: Fee line ID.
+        data_tests: [not_null, unique]
+      - name: fee_type
+        description: CASE_RATE (per completed episode) or PLATFORM_FEE (per effective month).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['CASE_RATE', 'PLATFORM_FEE']
+      - name: employer_id
+        description: Employer the fee line rolls up to; 'UNATTRIBUTED' when it has no valid program.
+      - name: rate_usd
+        description: Contract rate in USD, before discount.
+      - name: discount_pct_raw
+        description: Discount as entered in the contracting tool.
+      - name: discount_rate
+        description: Discount as a fraction (0.12 = 12%) after the discount rule.
+      - name: discount_rule_applied
+        description: Which branch of the discount rule produced discount_rate.
+      - name: projected_episodes
+        description: Projected episodes over the full effective window (case-rate lines only).
+      - name: effective_months
+        description: Calendar months in the effective window.
+      - name: is_orphan
+        description: No program, or a program missing from Salesforce.
+
+  # ------------------------------------------------------------------ facts
+  - name: gold_fact_episodes
+    description: >
+      Internal building block: answer questions from the LLM-facing agg_ and rpt_ tables instead. Grain: one row per episode with a status record on or before var('as_of_date'). Current
+      status = latest record on or before that date; later records are ignored (counted in later_*
+      columns). is_revenue_eligible = COMPLETED and not excluded. Exclusions, in order: test
+      record; fee line not in the schedule; platform-fee line; no surgery date or invoice month;
+      surgery month outside the fee window. Orphan fee lines stay eligible ('UNATTRIBUTED').
+    columns:
+      - name: episode_id
+        description: Episode ID.
+        data_tests: [not_null, unique]
+      - name: current_status
+        description: Status of the latest record on or before var('as_of_date').
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['REFERRED', 'SCHEDULED', 'COMPLETED', 'CANCELLED']
+      - name: fee_id
+        description: Fee line the episode bills against. FEE-999 (test data, not in the fee schedule) is warned in silver and excluded here.
+      - name: surgery_month
+        description: Reporting month for case revenue. Surgery month; invoice_month when the surgery date is missing. Null = no revenue.
+      - name: surgery_month_source
+        description: "'surgery_date' or 'invoice_month_fallback'."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['surgery_date', 'invoice_month_fallback']
+      - name: invoice_month
+        description: Month invoiced upstream. Used only as the surgery_month fallback.
+      - name: employer_id
+        description: Employer via fee line -> program -> account roll-up; 'UNATTRIBUTED' for orphan fee lines; null for fee lines not in the schedule.
+      - name: is_status_changed_after_as_of
+        description: The latest record in the extract (after as_of_date) has a different status than current_status.
+      - name: revenue_exclusion_reason
+        description: Why a completed episode earns no case revenue. Null when eligible or not completed.
+      - name: is_revenue_eligible
+        description: Completed and not excluded. Exactly the episodes counted in case revenue.
+        data_tests: [not_null]
+
+  - name: gold_fact_revenue_monthly
+    description: >
+      Internal building block: answer questions from the LLM-facing agg_ and rpt_ tables instead. Grain: one row per revenue_component x source (fee line; program for ADJUSTMENT) x month,
+      through the as-of month. CASE_RATE = eligible episodes x rate x (1 - discount) in the
+      reporting month. PLATFORM_FEE = rate x (1 - discount) every effective month, including
+      before go-live. ADJUSTMENT = NetSuite memos by program and billing month, added after
+      discount; late-posted memos included and flagged.
+    columns:
+      - name: revenue_line_id
+        description: component | fee_id or program_id | YYYY-MM.
+        data_tests: [not_null, unique]
+      - name: revenue_component
+        description: CASE_RATE, PLATFORM_FEE or ADJUSTMENT.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['CASE_RATE', 'PLATFORM_FEE', 'ADJUSTMENT']
+      - name: fee_id
+        description: Fee line for CASE_RATE and PLATFORM_FEE rows; null for ADJUSTMENT rows.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('gold_dim_fee_lines')
+                field: fee_id
+      - name: program_id
+        description: Program of the fee line or memo. Null for orphan fee lines; PRG-299 (memo CM-10812, warned in silver) has no program in Salesforce and is reported as 'Unattributed'.
+      - name: revenue_month
+        description: First day of the month the revenue is reported in.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('gold_dim_months')
+                field: month_start
+      - name: employer_id
+        description: Ultimate parent employer; 'UNATTRIBUTED' when the fee line or memo has no valid program.
+      - name: episode_count
+        description: Eligible completed episodes (CASE_RATE rows only).
+      - name: memo_count
+        description: Distinct NetSuite memos (ADJUSTMENT rows only).
+      - name: gross_usd
+        description: Before discount. Episodes x rate, the platform rate, or the memo total.
+      - name: discount_usd
+        description: gross_usd x discount_rate, rounded to cents. Zero for adjustments.
+      - name: net_revenue_usd
+        description: gross_usd - discount_usd. Sum this for recognized revenue.
+        data_tests: [not_null]
+      - name: adjustment_usd_posted_after_as_of
+        description: Part of an ADJUSTMENT row's amount posted after var('as_of_date').
+
+  # ------------------------------------------------------------------ LLM-facing tables
+  # The tables below are the only ones to query for answers (see AGENTS.md). Each answers its
+  # questions with a single-table select: no joins. meta.role marks dimensions and measures.
+
+  - name: gold_agg_revenue_employer_monthly
+    description: >
+      LLM-facing. Recognized revenue by employer and month: the CFO view (Part 2a). Grain: one row
+      per employer x month, from the first fee line start through the as-of month (2026-06).
+      Employer = ultimate parent account: subsidiaries, unions and a duplicate account are rolled
+      up; 'UNATTRIBUTED' holds revenue with no valid program. Revenue = case-rate revenue
+      (episodes COMPLETED as of 2026-06-30, in the surgery month) + platform fees (every month the
+      fee line is effective), both after discount, + NetSuite adjustments. Already applied: as-of
+      cut-off, test and invalid episodes excluded, discounts normalized, duplicates removed. Memos
+      posted after the as-of date are included (see adjustments_posted_after_as_of_usd). All
+      _usd and episode columns are additive. A roll-up of agg_revenue_program_monthly; use that
+      table for a program or service line.
+    config:
+      meta: {llm_exposed: true}
+    columns:
+      - name: employer_month_id
+        description: employer_id | YYYY-MM.
+        data_tests: [not_null, unique]
+      - name: employer_id
+        description: Ultimate parent account ID, or 'UNATTRIBUTED'.
+        meta: {role: dimension}
+      - name: employer_name
+        description: Ultimate parent account name. One employer is one line.
+        meta: {role: dimension}
+      - name: is_unattributed
+        description: Revenue from fee lines or memos with no valid program.
+        meta: {role: dimension}
+      - name: revenue_month
+        description: First day of the reporting month (the surgery month for case revenue).
+        meta: {role: dimension}
+      - name: year_quarter
+        description: Calendar quarter, e.g. 2026-Q2 (April-June).
+        meta: {role: dimension}
+      - name: completed_episodes
+        description: Episodes completed as of 2026-06-30 that earn the case rate, by surgery month.
+        meta: {role: measure}
+      - name: gross_revenue_usd
+        description: Case and platform revenue before discount.
+        meta: {role: measure}
+      - name: discount_usd
+        description: Contract discounts on case and platform revenue.
+        meta: {role: measure}
+      - name: case_revenue_usd
+        description: Case-rate revenue after discount.
+        meta: {role: measure}
+      - name: platform_fee_revenue_usd
+        description: Platform-fee revenue after discount.
+        meta: {role: measure}
+      - name: adjustments_usd
+        description: NetSuite credits, true-ups and fees for the billing month (usually negative), added after discount.
+        meta: {role: measure}
+      - name: total_revenue_usd
+        description: Recognized revenue = case_revenue_usd + platform_fee_revenue_usd + adjustments_usd.
+        meta: {role: measure}
+        data_tests: [not_null]
+      - name: adjustments_posted_after_as_of_usd
+        description: Part of adjustments_usd posted after 2026-06-30. Included in revenue; flagged.
+        meta: {role: measure}
+
+  - name: gold_agg_revenue_program_monthly
+    description: >
+      LLM-facing. Recognized revenue by employer benefit program and month, with service line.
+      Grain: one row per program x month, through the as-of month. Same definitions as
+      agg_revenue_employer_monthly, one level down; 'UNATTRIBUTED' is one program row holding
+      revenue with no valid program. All _usd and episode columns are additive.
+    config:
+      meta: {llm_exposed: true}
+    columns:
+      - name: program_month_id
+        description: program_id | YYYY-MM.
+        data_tests: [not_null, unique]
+      - name: program_id
+        description: Salesforce program ID, or 'UNATTRIBUTED'.
+        meta: {role: dimension}
+      - name: program_name
+        description: Program name, e.g. Marston Cardiac.
+        meta: {role: dimension}
+      - name: service_line
+        description: Orthopedics & Spine, Bariatric, Oncology or Cardiac. Null for UNATTRIBUTED.
+        meta: {role: dimension}
+      - name: employer_id
+        description: Ultimate parent employer of the program.
+        meta: {role: dimension}
+      - name: employer_name
+        description: Ultimate parent employer name.
+        meta: {role: dimension}
+      - name: revenue_month
+        description: First day of the reporting month.
+        meta: {role: dimension}
+      - name: year_quarter
+        description: Calendar quarter, e.g. 2026-Q2.
+        meta: {role: dimension}
+      - name: completed_episodes
+        description: Episodes completed as of 2026-06-30 that earn the case rate.
+        meta: {role: measure}
+      - name: case_revenue_usd
+        description: Case-rate revenue after discount.
+        meta: {role: measure}
+      - name: platform_fee_revenue_usd
+        description: Platform-fee revenue after discount.
+        meta: {role: measure}
+      - name: adjustments_usd
+        description: NetSuite adjustments for the program and billing month.
+        meta: {role: measure}
+      - name: total_revenue_usd
+        description: Recognized revenue = case + platform + adjustments.
+        meta: {role: measure}
+        data_tests: [not_null]
+      - name: is_unattributed
+        description: Revenue from fee lines or memos with no valid program.
+        meta: {role: dimension}
+      - name: gross_revenue_usd
+        description: Case and platform revenue before discount.
+        meta: {role: measure}
+      - name: discount_usd
+        description: Contract discounts on case and platform revenue.
+        meta: {role: measure}
+      - name: adjustments_posted_after_as_of_usd
+        description: Part of adjustments_usd posted after 2026-06-30. Included in revenue; flagged.
+        meta: {role: measure}
+
+  - name: gold_agg_pacing_fee_line
+    description: >
+      LLM-facing. Utilization pacing per case-rate fee line as of 2026-06-30 (Part 2b): are members
+      getting to care at the contracted volume? Grain: one row per case-rate fee line. expected =
+      projected_episodes x share of the fee line's window elapsed (days, as-of date inclusive);
+      completed = episodes that earn the case rate (same as revenue). Pro-rated from the fee window
+      even when the program went live later (flagged). Episode and _usd columns are additive;
+      pacing_ratio is NOT: for a group, recompute sum(completed_episodes) / sum(expected_episodes).
+    config:
+      meta: {llm_exposed: true}
+    columns:
+      - name: fee_id
+        description: Case-rate fee line.
+        data_tests: [not_null, unique]
+        meta: {role: dimension}
+      - name: employer_name
+        description: Ultimate parent employer, or 'Unattributed (no valid program)'.
+        meta: {role: dimension}
+      - name: program_name
+        description: Program the fee line belongs to.
+        meta: {role: dimension}
+      - name: elapsed_share
+        description: Days elapsed through the as-of date / days in the window, 0 to 1.
+      - name: expected_episodes
+        description: projected_episodes x elapsed_share.
+        meta: {role: measure}
+      - name: completed_episodes
+        description: Episodes completed as of 2026-06-30 that earn the case rate.
+        meta: {role: measure}
+      - name: pacing_ratio
+        description: completed / expected. Null before the window starts. Not additive.
+        meta: {role: measure, aggregation: "sum(completed_episodes) / sum(expected_episodes)"}
+      - name: revenue_at_risk_usd
+        description: Shortfall to date (never below 0) x rate x (1 - discount). Revenue lost if the shortfall is never made up.
+        meta: {role: measure}
+      - name: is_window_closed
+        description: The window ended on or before the as-of date; the ratio is final, not a pace.
+        meta: {role: dimension}
+      - name: is_go_live_after_window_start
+        description: The program went live after the fee line started, so early months had no live program.
+        meta: {role: dimension}
+      - name: client_success_action
+        description: >
+          Judgement rule, not a contract term. 'escalate' = pacing_ratio below 0.75, revenue at risk
+          of $40,000 or more, at least 60 days elapsed, an attributed employer, and no go-live gap.
+          'watch' = any other line below 0.75. Null = on pace (0.75 or above) or not started.
+        meta: {role: dimension}
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['escalate', 'watch']
+      - name: program_id
+        description: Salesforce program ID. Null for a fee line with no program.
+        meta: {role: dimension}
+      - name: employer_id
+        description: Ultimate parent employer ID, or 'UNATTRIBUTED'.
+        meta: {role: dimension}
+      - name: is_unattributed
+        description: The fee line has no valid program, so no employer to escalate to.
+        meta: {role: dimension}
+      - name: effective_start
+        description: First day the fee line is effective.
+        meta: {role: dimension}
+      - name: effective_end
+        description: Last day the fee line is effective.
+        meta: {role: dimension}
+      - name: go_live_date
+        description: Date the program went live in Salesforce.
+        meta: {role: dimension}
+      - name: window_days
+        description: Days in the fee line's effective window, both ends included.
+      - name: elapsed_days
+        description: Days of the window elapsed through 2026-06-30 (0 before it starts, window_days after it ends).
+      - name: projected_episodes
+        description: Episodes Carrum and the employer projected over the full effective window (contract term).
+        meta: {role: measure}
+      - name: shortfall_episodes
+        description: expected_episodes - completed_episodes, never below 0.
+        meta: {role: measure}
+      - name: rate_usd
+        description: Contract case rate per completed episode, before discount.
+      - name: discount_rate
+        description: Contract discount as a fraction (0.12 = 12%).
+
+  - name: gold_rpt_data_quality_register
+    description: >
+      LLM-facing. Known data-quality issues and how much each would move the answers (Part 2c).
+      Grain: one row per issue. Use it to caveat a revenue or pacing answer and to answer "can I
+      trust this number?". Impact columns describe an alternative handling (impact_basis), not a
+      correction: never add them to revenue. Counts and amounts are computed on every build.
+    config:
+      meta: {llm_exposed: true}
+    columns:
+      - name: issue_id
+        description: Stable ID (DQ-nn).
+        data_tests: [not_null, unique]
+      - name: rows_affected
+        description: Records, memos, fee lines or accounts with the issue.
+      - name: q2_revenue_impact_usd
+        description: How much as-of-quarter revenue would move under the alternative in impact_basis (signed). Null if not quantifiable.
+      - name: q2_revenue_misattributed_usd
+        description: Revenue that would land on the wrong employer line without the fix (total unchanged).
+      - name: pacing_completed_impact
+        description: Change in completed episodes counted toward pacing under the alternative.
+      - name: impact_basis
+        description: The alternative handling the impact is measured against.
+      - name: handling
+        description: What the model does about the issue.
+      - name: caught_by_test
+        description: dbt test(s) that detect it or pin its handling; 'none' where only this register reports it.
+      - name: fix_belongs
+        description: Where the real fix belongs (upstream system, model, or a business decision).
+      - name: source_file
+        description: Raw extract the issue is in.
+        meta: {role: dimension}
+      - name: issue
+        description: What the problem is.
+      - name: detection
+        description: How it was detected.
+      - name: detail
+        description: Specifics computed on the build (affected IDs with their employer, before/after pacing, or the potential amount).

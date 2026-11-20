@@ -51,3 +51,154 @@
 - **Asked:** commit the scaffold and bronze models on a branch and open a PR
 - **Did:** two commits on `scaffold-bronze-layer` (docs, then scaffold); PR #1 with What / Why / Testing
 - **Checked:** `dbt parse` clean before committing; commits use the personal identity; `notes/` stayed out
+
+### 9. Whiteboard: business flow and dimensional model
+
+- **Asked:** before building, sketch the business flow to the revenue answer and a rough dimensional model; brainstorm only, no file changes
+- **Did:** drew the employer → program → fee line → episode / adjustment flow, a star schema around shared conformed dims and two facts, and bronze → silver → gold lineage with one thin aggregate per question
+- **Checked:** grains and joins match the raw-data profiling and the brief's business rules; the open design choice (memo-level adjustment fact) was left for me to decide
+
+### 10. Silver and gold models for 2a
+
+- **Asked:** build the models agreed in the brainstorm; tests and a memo-level fact deferred
+- **Did:** recorded the modelling decisions before building (now in the model docs); built 5 silver staging models, 4 gold dims, 2 gold facts and the employer × month revenue aggregate, with descriptions and grain tests; asked me to settle one conflict (late-posted memos) rather than pick
+- **Checked:** `dbt build` and `dbt docs generate` pass on a scratch database; ran each build-plan check and reconciled case revenue, the aggregate and platform-fee months against independent queries
+
+### 11. Unit tests for business rules
+
+- **Asked:** dbt unit tests (mocked inputs) for every business rule and data-issue fix built so far, without changing model SQL
+- **Did:** added unit tests to the silver and gold yml, one rule each with edge cases (as-of boundaries, inclusive fee windows, partial months, exclusion precedence); left rules the brief and docs don't settle as open questions instead of encoding a guess
+- **Checked:** `dbt build` passes; mutation-checked every test (broke the covered logic, confirmed the test failed, restored the SQL)
+
+### 12. Blind re-derivation of Part 2 and the missing surgery date rule
+
+- **Asked:** two independent agents, given only the brief and the CSVs, to answer 2a and 2b in plain SQL, then compare their results with the gold marts
+- **Did:** every 2a difference traced to a documented choice, not a bug; both agents reported completed episodes with no surgery date in their invoice month, and I agreed to switch from excluding them to that fallback, flagged in a new column
+- **Checked:** `dbt build` and `dbt docs generate` pass; the new unit test was mutation-checked; with the same choices, gold matches an agent's result for every employer and month to the cent
+
+### 13. Part 2a answer query and export
+
+- **Asked:** build the saved 2a query and its CSV output
+- **Did:** added a dbt analysis that only filters and totals the employer × month mart (month rows, employer Q2 totals, grand total), and a script that exports every compiled analysis to `outputs/`; documented the run steps in the README
+- **Checked:** grand total matches the figure verified after the surgery-date fallback; subtotals are produced by the same query as the month rows; ran from a scratch build because the DuckDB UI held the lock
+
+### 14. Relationship tests, error/warn policy and singular tests
+
+- **Asked:** proceed with the deferred test layer
+- **Did:** added relationship, accepted-values and not-null tests to silver and gold under a stated error/warn policy (warn only for orphans the model already handles); added four reconciliation tests and one discount invariant as singular tests; left the open edge-case questions untested
+- **Checked:** `dbt build` passes with only the expected warnings; mutated a copy of the built database once per failure mode and confirmed each singular test caught it, then confirmed all return nothing on the real data
+
+### 15. Test trim
+
+- **Asked:** whether the tests hold value or are padding; then trim and log
+- **Did:** removed tests that repeated a defect already warned elsewhere, could not fail by construction, covered columns no rule reads, or restated a model's own SQL; each known defect now warns once, at the first layer where it is visible
+- **Checked:** `dbt build` passes with one warning per distinct defect; kept every unit test and the reconciliation tests that were mutation-checked
+
+### 16. README trim
+
+- **Asked:** make the README lean, each section minimally worded
+- **Did:** cut it to setup, layers, test policy and Part 2 commands; grain and rules now point to the model docs instead of being repeated
+- **Checked:** every command kept is one the build and export actually use
+
+### 17. Part 2b utilization risk
+
+- **Asked:** brainstorm 2b, then build it with the recommended decisions, recorded with what we saw and why
+- **Did:** added a pacing model at fee-line grain (expected, completed, ratio, revenue at risk, flags) and the 2b answer query; escalation thresholds sit in the query because they are judgement, not definition
+- **Checked:** build passes; the new unit test failed under each of four deliberate breaks of the model; the escalation list matches the reasoning in the brainstorm
+
+### 18. Docs de-duplication
+
+- **Asked:** whether the yml was getting bloated, then clean up
+- **Did:** rules now live once, in the yml; SQL headers reduced to the grain line; unit tests moved to their own files; the two longest descriptions cut to what and how, with the why kept in my notes
+- **Checked:** build and docs generate unchanged; both answer CSVs regenerate identically
+
+### 19. Part 2c data quality register
+
+- **Asked:** build gold model for one row per issue
+- **Did:** added a gold report model with one row per issue: counts and dollar impacts computed from the models on every build, hand-written text for detection, handling, test and where the fix belongs; added the 2c answer query
+- **Checked:** spot-checked the larger impacts against the earlier profiling and broke one down independently until it tied to the cent; the computed figure exposed an error in my own earlier pacing estimate, now corrected in my notes
+
+### 20. Part 3 approach
+
+- **Asked:** to follow a metric-view convention directed to (named dimensions and measures, each with a definition), with an LLM reading only aggregate tables
+- **Did:** proposed definitions on the aggregate tables, comments written into the database, and one routing file
+- **Checked:** read the brief's Part 3 wording and the metric-view example I pointed to before proposing
+
+### 21. LLM-facing layer
+
+- **Asked:** build it, including a program-level revenue table and moving the escalation rule into the pacing model
+- **Did:** added program × month revenue and made the employer table a roll-up of it; moved the escalation rule into the pacing model; marked dimensions and measures on the four LLM-facing tables; wrote descriptions into DuckDB as comments; added AGENTS.md with routing, rules and what the data cannot answer
+- **Checked:** the 2a and 2b outputs are unchanged; the program table sums to the same Q2 total; the new tests failed under deliberate breaks; fixed a list-ordering flaw that made the 2c output differ between builds
+
+### 22. Full definitions on the LLM-facing tables
+
+- **Asked:** whether the definitions were actually missing in the database
+- **Did:** found 20 columns on three LLM-facing tables with no definition; documented them and added a test that fails if any column on those tables lacks a comment in the database
+- **Checked:** every column on the four tables now has a comment in DuckDB; removing one description made the new test fail
+
+### 23. Part 3 eval harness
+
+- **Asked:** a repeatable eval: headless Claude Code on a fresh clone, generic instruction, read-only tools, graded against the marts
+- **Did:** added `eval/` (questions, run script, grader)
+- **Checked:** every question passed; hand-checked two answers to the cent; transcripts showed some runs never queried the database
+
+### 24. Fixes from the eval
+
+- **Asked:** fix the gaps the eval found, in the project, not the instruction
+- **Did:** AGENTS.md shows the read-only query command; the register names the employer behind each flagged memo
+- **Checked:** build passes; only the 2c output changed, and its memos tie to the 2a adjustments; re-ran the eval: every question passed and every answer queried the database
+
+### 25. findings.md draft
+
+- **Asked:** start the findings document while the eval runs
+- **Did:** drafted the 2c register, assumptions, the Part 3 write-up and Part 4; the 2a, 2b and 2c figures are generated from the output CSVs, and the latest eval results are left as a marked placeholder
+- **Checked:** spot-checked the generated tables against the CSVs and removed a figure I had computed by hand
+
+### 26. Personal details in eval transcripts
+
+- **Asked:** commit the eval results
+- **Did:** found the saved transcripts carried my local paths and personal Claude setup; the eval now keeps only the run settings and hides the home path, and the earlier transcripts were cleaned the same way
+- **Checked:** scanned every committed transcript for my name and email before committing; the grader still reads the cleaned files
+
+### 27. Showing the profiling work
+
+- **Asked:** confirm the data issues are documented specifically, not just named, and that the work behind them is visible
+- **Did:** every register row now names the affected records (computed on the build); moved the profiling script from my private notes into `scripts/` and referenced it from the findings
+- **Checked:** the profiling script runs clean from the repo root; build passes; only the 2c output changed, in its detail text
+
+### 28. Compact register in the findings
+
+- **Asked:** whether the findings need the full register when it is already a CSV
+- **Did:** kept the register in the findings, since Part 4 asks the document to cover it, but cut it to one generated line per issue with its effect, handling, test and fix; detection, effect basis and record IDs are routed to the CSV
+- **Checked:** every line is generated from the CSV; read the rendered table for wording
+
+### 29. 4a wording: what not to build
+
+- **Asked:** whether "no BI layer" contradicts the gold tables
+- **Did:** reworded: the gold tables are what BI reads; what waits is dashboards and any semantic layer that redefines metrics outside dbt
+- **Checked:** the rest of 4a is unchanged
+
+### 30. "With more time" list
+
+- **Asked:** why the eval should run in CI; then to update the list
+- **Did:** the eval bullet now says when it runs and why (a rename or reworded definition passes the build but can change an LLM's answer); the snapshot bullet covers fee schedule, program and account history and a frozen record of each close
+- **Checked:** both items match what the project does today (full rebuilds, no history beyond the episode log and memo posting dates)
+
+### 31. Part 4c rewrite
+
+- **Asked:** lead 4c with the AI's wrong handling of the missing surgery dates, shorten the Harrow point, and list what else was corrected
+- **Did:** 4c now tells the surgery-date catch (assistant's exclusion rule, overturned by independent re-derivation) and lists five other corrections in one line each
+- **Checked:** the dollar figure is read from the register CSV; each listed correction matches an entry in this log
+
+### 32. Part 4c: the duplicate-account catch
+
+- **Asked:** lead 4c with the assistant's unsupported claims about how account EMP-102 was created, keep the missing surgery date rule to two lines
+- **Did:** 4c now tells the EMP-102 story (an unsupported claim, an overcorrection, then the narrower claim the columns support) and the surgery-date catch in two lines, followed by the other corrections
+- **Checked:** confirmed in the data that EMP-102's normalized name, industry, funding type and parent match EMP-101 and that it alone owns PRG-202; the dollar figure is read from the register CSV
+
+### 33. Final checks before submitting
+
+- **Asked:** fill in the eval result, fix the agent count, run the project from a clean clone, check nothing in the brief is left
+- **Did:** one-line eval result in the findings; corrected the log's numbering and agent count; README now has the docs step, why the CSVs are sources not seeds, and the Part 3 pointers
+- **Checked:** see the clean-clone run in this entry's commit
+

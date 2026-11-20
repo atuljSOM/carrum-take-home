@@ -1,0 +1,94 @@
+# Part 3 eval questions. run.sh asks each one, word for word, after a generic instruction.
+#
+# expected: decline          -> the data cannot answer it; a pass is a refusal with no number.
+# expected: {sql: ...}       -> SQL against the gold marts in the freshly built carrum.duckdb.
+#   Every cell the query returns must appear in the answer to pass: numbers within 0.5%
+#   (so $1.28M matches 1,280,857.19; sign ignored), text as a case-insensitive substring.
+#   Keep the result small: only the values a correct answer has to state.
+
+questions:
+  # ---------------------------------------------------------------- Part 2, verbatim
+  - id: q2a
+    type: part2
+    question: >
+      Recognized revenue by employer and month for Q2 2026 (April, May and June). Report at the
+      level a CFO would want: one row per employer per month, rolled up so that one employer is
+      one line. Show the components (case revenue, platform fees, adjustments) and include a
+      quarter total.
+    expected:
+      sql: |
+        -- Each employer's Q2 total and the all-employer Q2 total.
+        select split_part(employer_name, ' ', 1) as employer, sum(total_revenue_usd) as q2_total_usd
+        from gold.agg_revenue_employer_monthly
+        where year_quarter = '2026-Q2'
+        group by 1
+        union all
+        select 'All', sum(total_revenue_usd)
+        from gold.agg_revenue_employer_monthly
+        where year_quarter = '2026-Q2'
+
+  - id: q2b
+    type: part2
+    question: >
+      Return the case-rate fee lines pacing worst against projection as of 2026-06-30. For each,
+      show completed episodes, expected episodes, pacing ratio, and the revenue at risk if the
+      shortfall is never made up. Tell us which ones you would actually escalate to Client
+      Success, and why the ranking is what it is.
+    expected:
+      sql: |
+        -- The worst-pacing line and every line the escalation rule flags.
+        select fee_id, pacing_ratio
+        from gold.agg_pacing_fee_line
+        where pacing_ratio is not null
+        order by pacing_ratio
+        limit 1;
+        select fee_id
+        from gold.agg_pacing_fee_line
+        where client_success_action = 'escalate'
+
+  # ---------------------------------------------------------------- the way a VP would ask
+  - id: vp1
+    type: vp-phrasing
+    question: Quick one, what was Bayview worth to us in Q2, all in?
+    expected:
+      sql: |
+        select sum(total_revenue_usd) as q2_total_usd
+        from gold.agg_revenue_employer_monthly
+        where year_quarter = '2026-Q2' and employer_name ilike 'Bayview%'
+
+  - id: vp2
+    type: vp-phrasing
+    question: Which clients are way behind on volume and need a call from CS this week?
+    expected:
+      sql: |
+        select distinct split_part(employer_name, ' ', 1) as employer
+        from gold.agg_pacing_fee_line
+        where client_success_action = 'escalate'
+
+  - id: vp3
+    type: vp-phrasing
+    question: Which service line is making us the most money this year, and how much?
+    expected:
+      sql: |
+        select split_part(service_line, ' ', 1) as service_line, sum(total_revenue_usd) as ytd_usd
+        from gold.agg_revenue_program_monthly
+        where year(revenue_month) = 2026 and service_line is not null
+        group by service_line
+        order by ytd_usd desc
+        limit 1
+
+  # ---------------------------------------------------------------- the data cannot answer
+  - id: na1
+    type: unanswerable
+    question: What will our full-year 2026 revenue come in at?
+    expected: decline
+
+  - id: na2
+    type: unanswerable
+    question: How much have we saved Marston Grocery compared with what their surgeries would have cost through regular claims?
+    expected: decline
+
+  - id: na3
+    type: unanswerable
+    question: Which surgeons did the most completed procedures for us in Q2?
+    expected: decline

@@ -1,36 +1,60 @@
 # Carrum Health — Staff Analytics Engineer Take-Home
 
-dbt Core + DuckDB project modelling Salesforce, contracting, care-platform and NetSuite extracts.
+dbt Core + DuckDB over Salesforce, contracting, care-platform and NetSuite extracts.
+Asking questions of the built data (people or LLMs): see [AGENTS.md](AGENTS.md).
 
-## Setup (macOS, from a clean clone)
+## Setup (macOS, clean clone)
 
 ```bash
-git clone <repo-url> carrum-take-home && cd carrum-take-home
-python3.11 -m venv .venv          # dbt supports Python 3.10–3.12
-source .venv/bin/activate
+git clone https://github.com/atuljSOM/carrum-take-home.git carrum-take-home && cd carrum-take-home
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-export DBT_PROFILES_DIR=.         # profiles.yml lives in the repo
-dbt debug
+export DBT_PROFILES_DIR=.
 dbt build
 ```
 
-The build writes `carrum.duckdb` in the repo root (override with `DBT_DUCKDB_PATH`). Close any other
-DuckDB session on that file first (for example `duckdb -ui carrum.duckdb`); DuckDB allows only one writer.
+Writes `carrum.duckdb` in the repo root. Close other DuckDB sessions on it first (single writer).
+Optional: the DuckDB CLI (`brew install duckdb`) for ad-hoc SQL and `duckdb < scripts/profile_raw_csvs.sql`
+(the raw-data profiling); `AGENTS.md` also gives a Python fallback.
 
-## Project layout (medallion)
+Docs: `dbt docs generate && dbt docs serve`.
 
-Data flows bronze → silver → gold. Each layer is a DuckDB schema and reads only the one below.
+**Why sources, not seeds.** The CSVs are dbt sources read in place (dbt-duckdb external location),
+every column as text: the files are never copied or edited, and a malformed value reaches the
+bronze contract as data to test instead of failing or being silently coerced at load.
+
+## Layers
 
 | Schema | Brief's term | Holds |
 |---|---|---|
-| `bronze` | — | Exact copy of each CSV, plus a data contract that fails on drift |
-| `silver` | staging (`stg_`), intermediate (`int_`) | Typed and cleaned; one row per source record |
-| `gold` | marts | Business rules, revenue and pacing. **Query this schema only.** |
+| `bronze` | — | Exact copy of each CSV + data contract |
+| `silver` | staging | Typed, cleaned, one row per source record |
+| `gold` | marts | Business rules. **Query this schema only.** |
 
-### Expected warnings
+Grain and rules: see each model's description in `models/**/_*.yml`.
 
-There are 10, all intentional: known defects in the raw extracts, each with its count in
-`models/bronze/_bronze.yml`. A changed count means the data changed. The "config paths match no
-models" warning clears once silver and gold have models.
+## Tests
 
-_Run instructions for Part 2 queries, Part 3 and docs to follow._
+- **Error:** would silently change a number (grain, unknown category, broken key, reconciliation).
+- **Warn:** known defect the models handle. Expect 10; each states its count.
+- Unit tests: `dbt test --select "test_type:unit"`.
+
+## Part 2 answers
+
+```bash
+dbt compile --select "resource_type:analysis"
+python scripts/export_answers.py      # writes outputs/<analysis>.csv
+```
+
+| Question | Query | Output |
+|---|---|---|
+| 2a | `analyses/q2a_revenue_by_employer_q2_2026.sql` | `outputs/q2a_revenue_by_employer_q2_2026.csv` |
+| 2b | `analyses/q2b_utilization_risk.sql` | `outputs/q2b_utilization_risk.csv` |
+| 2c | `analyses/q2c_data_quality_register.sql` | `outputs/q2c_data_quality_register.csv` |
+
+## Part 3
+
+- Questions about the data: [AGENTS.md](AGENTS.md) (four LLM-facing gold tables; definitions are also stored as comments in `carrum.duckdb`).
+- Eval: `eval/run.sh` (headless Claude Code on a fresh clone; needs a Claude Code login). Results and transcripts: `eval/results/`.
+- Write-up and Part 4: [findings.md](findings.md).
+

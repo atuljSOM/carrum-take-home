@@ -3,6 +3,8 @@
 Carrum Health Staff Analytics Engineer take-home: dbt Core + DuckDB over five CSV extracts.
 Spec: [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md) (transcribed from the .docx in the same folder; the .docx is the original).
 
+**Answering questions about the data (not building the project)? Follow [AGENTS.md](AGENTS.md) and ignore the rest of this file.**
+
 ## Environment
 
 - Python 3.11 venv at `.venv`; versions pinned in `requirements.txt`.
@@ -27,7 +29,7 @@ duckdb carrum.duckdb        # interactive SQL
 - Every number that appears in an output or the write-up comes from a query saved in the repo. Don't quote ad-hoc results.
 - The README must run from a clean clone. Update it in the same change as anything it depends on.
 - Log each AI-assisted step in `docs/AI_LOG.md` (asked / did / checked): one short line each, no counts, IDs or lists that live elsewhere in the repo. Put the detail and decisions behind each entry in `notes/DECISIONS.md` (gitignored, personal).
-- Write down an assumption before code relies on it.
+- Write down an assumption before code relies on it: in the model's yml description; working detail in `notes/DECISIONS.md`.
 - PR descriptions use three sections, a few lines each:
   - `## What`: the change, in one or two sentences; name the models touched.
   - `## Why`: the business or technical reason; cite the brief or a CLAUDE.md rule where one applies.
@@ -54,19 +56,9 @@ Every model belongs to one layer; schema = layer.
 - Answer queries (Part 2, Part 3) read gold only.
 - `int_` only when a model is reused; otherwise use CTEs.
 - Custom generic tests: `tests/generic/`.
+- Unit tests: in the model's existing yml, under `unit_tests:`. One rule per test, fewest rows, edge cases (as-of date, window boundaries, nulls); pin `as_of_date` in `overrides`. Mutation-check each new test (break the logic, see it fail, revert). Don't encode a guess for a rule the brief or the model docs don't settle: ask.
 
 ## Decisions
 
-Structural (implemented):
-- Schemas are `bronze` / `silver` / `gold`; the brief's terms survive as the `stg_` / `int_` prefixes.
-- Bronze is identical to the source; exact duplicates are removed in silver, not bronze.
-- Silver and gold are tables so the DuckDB file can be queried from any directory (bronze views read the CSVs by relative path).
-- Source name is `raw_sources`.
-
-Modelling (proposed, to confirm before silver/gold are built):
-- Episode status: latest record on or before `as_of_date`; rows after it are excluded from current status.
-- NetSuite memos posted after `as_of_date` for in-period billing months: included and flagged.
-- Null surgery dates: excluded from monthly revenue and flagged (no fallback to `invoice_month`).
-- Episodes billed to a platform-fee line (FEE-403): excluded and flagged, not remapped.
-- Employer roll-up: to the ultimate parent account; accounts whose parent does not exist are top level.
-- A gold data-quality register model backs the 2c answer.
+- Silver and gold are tables, not views, so `carrum.duckdb` can be queried from any directory.
+- Modelling decisions live in the model and column descriptions (`models/**/_*.yml`). Don't change one without asking.
