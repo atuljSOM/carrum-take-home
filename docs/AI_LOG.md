@@ -146,4 +146,4 @@
 
 - **Asked:** fix the gaps the eval found, in the project, not the instruction
 - **Did:** AGENTS.md shows the read-only query command; the register names the employer behind each flagged memo
-- **Checked:** build passes; only the 2c output changed, and its memos tie to the 2a adjustments
+- **Checked:** build passes; only the 2c output changed, and its memos tie to the 2a adjustments; re-ran the eval: every question passed and every answer queried the database
