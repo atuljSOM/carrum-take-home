@@ -1,9 +1,6 @@
 {{ config(alias='agg_revenue_employer_monthly') }}
 
--- Grain: one row per employer x month, for every month from the first fee line start through the
--- as-of month. One employer is one line: subsidiaries, unions and duplicate accounts are rolled
--- up to the ultimate parent; revenue with no valid program appears as employer 'UNATTRIBUTED'.
--- Components are net of discount; adjustments are added after discount.
+-- Grain: one row per employer x month, through the as-of month. Rules and columns: see the model's yml.
 
 with revenue as (
     select * from {{ ref('gold_fact_revenue_monthly') }}

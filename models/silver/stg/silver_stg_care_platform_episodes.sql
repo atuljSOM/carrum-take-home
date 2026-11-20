@@ -1,9 +1,6 @@
 {{ config(alias='stg_care_platform_episodes') }}
 
--- One row per distinct episode status record (the status-change log, not one row per episode).
--- Exact duplicate rows are collapsed; source_row_count keeps how many copies were delivered.
--- Dates are parsed from both formats in the extract (ISO and MM/DD/YYYY). Rows are flagged,
--- never filtered: choosing the current status as of a date is a gold rule (gold_fact_episodes).
+-- Grain: one row per distinct episode status record. Rules and columns: see the model's yml.
 
 with deduped as (
     select

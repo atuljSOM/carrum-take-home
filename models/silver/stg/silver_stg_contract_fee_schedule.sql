@@ -1,8 +1,7 @@
 {{ config(alias='stg_contract_fee_schedule') }}
 
--- One row per contract fee line. Casts types; no other change.
--- discount_pct is kept exactly as entered: its scale (fraction vs whole percent) is a business
--- interpretation and is resolved in gold (gold_dim_fee_lines).
+-- Grain: one row per contract fee line. Rules and columns: see the model's yml.
+
 select
     trim(fee_id)                              as fee_id,
     nullif(trim(program_id), '')              as program_id,

@@ -99,3 +99,15 @@
 - **Asked:** make the README lean, each section minimally worded
 - **Did:** cut it to setup, layers, test policy and Part 2 commands; grain and rules now point to the model docs instead of being repeated
 - **Checked:** every command kept is one the build and export actually use
+
+### 17. Part 2b utilization risk
+
+- **Asked:** brainstorm 2b, then build it with the recommended decisions, recorded with what we saw and why
+- **Did:** added a pacing model at fee-line grain (expected, completed, ratio, revenue at risk, flags) and the 2b answer query; escalation thresholds sit in the query because they are judgement, not definition
+- **Checked:** build passes; the new unit test failed under each of four deliberate breaks of the model; the escalation list matches the reasoning in the brainstorm
+
+### 18. Docs de-duplication
+
+- **Asked:** whether the yml was getting bloated, then clean up
+- **Did:** rules now live once, in the yml; SQL headers reduced to the grain line; unit tests moved to their own files; the two longest descriptions cut to what and how, with the why kept in my notes
+- **Checked:** build and docs generate unchanged; both answer CSVs regenerate identically

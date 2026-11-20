@@ -1,8 +1,7 @@
 {{ config(alias='stg_salesforce_accounts') }}
 
--- One row per Salesforce account. Trims names and IDs; no other change.
--- The parent hierarchy is kept as delivered: top-level accounts point to themselves, and a
--- parent that does not exist (EMP-108 -> EMP-150) is left as is. Resolving it is a gold decision.
+-- Grain: one row per Salesforce account. Rules and columns: see the model's yml.
+
 select
     trim(account_id)        as account_id,
     trim(account_name)      as account_name,

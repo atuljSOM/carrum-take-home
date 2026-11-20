@@ -1,8 +1,6 @@
 {{ config(alias='stg_netsuite_billing_adjustments') }}
 
--- One row per distinct NetSuite memo. Exact duplicate rows are collapsed; source_row_count keeps
--- how many copies were delivered. billing_month is parsed from the three formats in the extract
--- (YYYY-MM, YYYY-M, MM/YYYY) to the first day of the month. Rows are flagged, never filtered.
+-- Grain: one row per distinct NetSuite memo. Rules and columns: see the model's yml.
 
 with deduped as (
     select

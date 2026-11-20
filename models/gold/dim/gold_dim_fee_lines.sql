@@ -1,11 +1,6 @@
 {{ config(alias='dim_fee_lines') }}
 
--- Grain: one row per contract fee line.
--- Applies the discount rule: discount_pct was entered by hand with mixed scales, so values above
--- 1 are read as whole percents (12.0 -> 12%), values from 0 to 1 as fractions (0.1 -> 10%), and
--- blank as no discount. The discount applies to every fee line, platform fees included.
--- Fee lines with no program (or a program missing from Salesforce) are flagged as orphans; their
--- revenue is reported under an "Unattributed" employer line rather than dropped.
+-- Grain: one row per contract fee line. Rules and columns: see the model's yml.
 
 with fee_lines as (
     select * from {{ ref('silver_stg_contract_fee_schedule') }}

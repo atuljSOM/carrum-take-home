@@ -1,8 +1,6 @@
 {{ config(alias='dim_months') }}
 
--- Grain: one row per calendar month, spanning every fee line's effective window.
--- Platform fees are recognized per effective month whether or not anything else happened,
--- so revenue needs a month spine rather than months observed in the data.
+-- Grain: one row per calendar month. Rules and columns: see the model's yml.
 
 with bounds as (
     select

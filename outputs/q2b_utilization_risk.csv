@@ -1,0 +1,13 @@
+fee_id,employer_name,program_name,completed_episodes,expected_episodes,pacing_ratio,revenue_at_risk_usd,client_success_action,notes
+FEE-307,Marston Grocery Co.,Marston Cardiac,5,19.8,0.25,67650.41,escalate,""
+FEE-312,Bayview County Employees Trust,Bayview Bariatric Pilot,9,30.0,0.3,54600.00,escalate,window closed: ratio is final
+FEE-316,Riverbend Unified School District,Riverbend MSK Surgery,3,5.6,0.54,10951.40,watch,only 30 days elapsed
+FEE-303,Alder Ridge Logistics,Alder Ridge Bariatric,19,34.7,0.55,41794.79,escalate,""
+FEE-311,Harrow Hospitality Group,Harrow MSK Surgery,23,39.9,0.58,55738.36,watch,program went live 2026-05-01 after the window started
+FEE-305,Bayview County Employees Trust,Bayview Union Cancer Care,19,29.8,0.64,50272.26,escalate,""
+FEE-310,Riverbend Unified School District,Riverbend Bariatric,18,24.8,0.73,14676.16,watch,""
+FEE-304,Bayview County Employees Trust,Bayview Joint & Spine,110,148.8,0.74,116301.37,escalate,""
+FEE-308,Tillman Aerospace,Tillman Surgery Program,73,89.3,0.82,48650.74,,""
+FEE-302,Alder Ridge Logistics,Alder Ridge MSK Surgery,37,44.6,0.83,31283.56,,""
+FEE-309,Riverbend Unified School District,Riverbend MSK Surgery,68,74.4,0.91,19789.04,,""
+FEE-390,Unattributed (no valid program),,38,39.7,0.96,5013.70,,no program or employer

@@ -1,6 +1,7 @@
 {{ config(alias='stg_salesforce_programs') }}
 
--- One row per employer benefit program. Casts dates; no other change.
+-- Grain: one row per employer benefit program. Rules and columns: see the model's yml.
+
 select
     trim(program_id)          as program_id,
     trim(account_id)          as account_id,

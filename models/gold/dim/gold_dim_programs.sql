@@ -1,8 +1,6 @@
 {{ config(alias='dim_programs') }}
 
--- Grain: one row per employer benefit program.
--- The hub dimension: fee lines and NetSuite adjustments both attach here, and it carries the
--- employer roll-up so every fact reaches the employer through one join.
+-- Grain: one row per employer benefit program. Rules and columns: see the model's yml.
 
 select
     programs.program_id,

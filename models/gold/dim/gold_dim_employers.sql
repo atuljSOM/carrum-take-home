@@ -1,9 +1,6 @@
 {{ config(alias='dim_employers') }}
 
--- Grain: one row per Salesforce account.
--- Resolves each account to its employer: the ultimate parent in the account hierarchy.
--- Subsidiaries, unions and duplicate accounts roll up to that parent so one employer is one line.
--- An account whose parent does not exist in Salesforce is treated as its own employer (flagged).
+-- Grain: one row per Salesforce account. Rules and columns: see the model's yml.
 
 with recursive
 

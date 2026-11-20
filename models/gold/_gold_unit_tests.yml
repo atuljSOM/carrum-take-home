@@ -1,0 +1,501 @@
+version: 2
+
+# ------------------------------------------------------------------ unit tests
+# Mocked-input tests of the business rules in gold. Each test proves one rule with the fewest rows;
+# columns a test does not name are null. as_of_date is pinned so a change to the project var does
+# not silently change what a test proves.
+unit_tests:
+  # ---------------------------------------------------------------- gold_dim_employers
+  - name: ut_dim_employers_rolls_up_to_ultimate_parent
+    description: >
+      An account two levels below a self-parented top account reports under that top account,
+      not under its direct parent.
+    model: gold_dim_employers
+    given:
+      - input: ref('silver_stg_salesforce_accounts')
+        rows:
+          - {account_id: EMP-001, account_name: Parent, parent_account_id: EMP-001}
+          - {account_id: EMP-002, account_name: Sub,    parent_account_id: EMP-001}
+          - {account_id: EMP-003, account_name: Union,  parent_account_id: EMP-002}
+    expect:
+      rows:
+        - {account_id: EMP-001, employer_id: EMP-001, employer_name: Parent, hierarchy_depth: 0}
+        - {account_id: EMP-002, employer_id: EMP-001, employer_name: Parent, hierarchy_depth: 1}
+        - {account_id: EMP-003, employer_id: EMP-001, employer_name: Parent, hierarchy_depth: 2}
+
+  - name: ut_dim_employers_missing_parent_is_own_employer
+    description: An account whose parent is not in Salesforce (EMP-108 -> EMP-150) is kept as its own employer and flagged.
+    model: gold_dim_employers
+    given:
+      - input: ref('silver_stg_salesforce_accounts')
+        rows:
+          - {account_id: EMP-108, account_name: Orphan, parent_account_id: EMP-150}
+    expect:
+      rows:
+        - {account_id: EMP-108, employer_id: EMP-108, employer_name: Orphan, hierarchy_depth: 0, is_parent_missing: true}
+
+  # ---------------------------------------------------------------- gold_dim_fee_lines
+  - name: ut_dim_fee_lines_discount_scale
+    description: >
+      Discount rule: blank = 0; above 1 is a whole percent (12.0 -> 0.12, 5.0 -> 0.05); 0 to 1 is a
+      fraction as entered (0.1 -> 0.1, boundary 0 -> 0).
+    model: gold_dim_fee_lines
+    given:
+      - input: ref('silver_stg_contract_fee_schedule')
+        rows:
+          - {fee_id: FEE-1, discount_pct_raw: null}
+          - {fee_id: FEE-2, discount_pct_raw: 12.0}
+          - {fee_id: FEE-3, discount_pct_raw: 5.0}
+          - {fee_id: FEE-4, discount_pct_raw: 0.1}
+          - {fee_id: FEE-5, discount_pct_raw: 0.0}
+      - input: ref('gold_dim_programs')
+        rows: []
+    expect:
+      rows:
+        - {fee_id: FEE-1, discount_rate: 0.0,  discount_rule_applied: blank as zero}
+        - {fee_id: FEE-2, discount_rate: 0.12, discount_rule_applied: whole percent / 100}
+        - {fee_id: FEE-3, discount_rate: 0.05, discount_rule_applied: whole percent / 100}
+        - {fee_id: FEE-4, discount_rate: 0.1,  discount_rule_applied: fraction as entered}
+        - {fee_id: FEE-5, discount_rate: 0.0,  discount_rule_applied: fraction as entered}
+
+  - name: ut_dim_fee_lines_orphan_unattributed
+    description: >
+      A fee line with no program, or with a program missing from Salesforce, is kept (not dropped),
+      flagged as an orphan and attributed to UNATTRIBUTED.
+    model: gold_dim_fee_lines
+    given:
+      - input: ref('silver_stg_contract_fee_schedule')
+        rows:
+          - {fee_id: FEE-1, program_id: PRG-1}
+          - {fee_id: FEE-2, program_id: null}
+          - {fee_id: FEE-3, program_id: PRG-404}
+      - input: ref('gold_dim_programs')
+        rows:
+          - {program_id: PRG-1, employer_id: EMP-001, employer_name: Parent}
+    expect:
+      rows:
+        - {fee_id: FEE-1, employer_id: EMP-001,      employer_name: Parent,                          is_orphan: false}
+        - {fee_id: FEE-2, employer_id: UNATTRIBUTED, employer_name: Unattributed (no valid program), is_orphan: true}
+        - {fee_id: FEE-3, employer_id: UNATTRIBUTED, employer_name: Unattributed (no valid program), is_orphan: true}
+
+  # ---------------------------------------------------------------- gold_dim_months
+  - name: ut_dim_months_spine_and_as_of_flag
+    description: >
+      The spine covers every month from the earliest fee line start to the latest end, including
+      mid-month starts and ends. The as-of month (June, as of 2026-06-30) is on or before as-of;
+      July is not.
+    model: gold_dim_months
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_contract_fee_schedule')
+        rows:
+          - {fee_id: FEE-1, effective_start: 2026-05-15, effective_end: 2026-06-10}
+          - {fee_id: FEE-2, effective_start: 2026-06-01, effective_end: 2026-07-10}
+    expect:
+      rows:
+        - {month_start: 2026-05-01, is_on_or_before_as_of: true}
+        - {month_start: 2026-06-01, is_on_or_before_as_of: true}
+        - {month_start: 2026-07-01, is_on_or_before_as_of: false}
+
+  # ---------------------------------------------------------------- gold_fact_episodes
+  - name: ut_fact_episodes_current_status_is_latest_record
+    description: >
+      Current status is the episode's most recent record, whatever order the rows arrive in:
+      COMPLETED then CANCELLED means the episode is CANCELLED (and earns nothing).
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, episode_status: COMPLETED, record_updated_at: "2026-04-10 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-1, episode_status: CANCELLED, record_updated_at: "2026-04-20 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-1, episode_status: REFERRED,  record_updated_at: "2026-04-01 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows: []
+    expect:
+      rows:
+        - {episode_id: EP-1, current_status: CANCELLED, records_as_of: 3, is_revenue_eligible: false}
+
+  - name: ut_fact_episodes_records_after_as_of_ignored
+    description: >
+      Records written after the as-of date do not set current status: EP-1 is SCHEDULED as of
+      2026-06-30 even though a later record says COMPLETED (surfaced in the later_* columns).
+      An episode whose only record is after the as-of date has no row.
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, episode_status: SCHEDULED, record_updated_at: "2026-06-30 23:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-1, episode_status: COMPLETED, record_updated_at: "2026-07-02 08:00:00", is_recorded_after_as_of: true,  is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-2, episode_status: COMPLETED, record_updated_at: "2026-07-01 08:00:00", is_recorded_after_as_of: true,  is_test_record: false, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows: []
+    expect:
+      rows:
+        - {episode_id: EP-1, current_status: SCHEDULED, later_record_count: 1, latest_status_in_extract: COMPLETED, is_status_changed_after_as_of: true}
+
+  - name: ut_fact_episodes_reporting_month_is_surgery_month
+    description: The reporting month is the surgery month, not invoice_month (surgery 2026-06-30, invoiced July -> June).
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, fee_id: FEE-1, episode_status: COMPLETED, surgery_date: 2026-06-30, invoice_month: 2026-07-01, record_updated_at: "2026-06-30 12:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-1, fee_type: CASE_RATE, effective_start: 2026-01-01, effective_end: 2026-12-31, is_orphan: false}
+    expect:
+      rows:
+        - {episode_id: EP-1, surgery_month: 2026-06-01, is_revenue_eligible: true}
+
+  - name: ut_fact_episodes_missing_surgery_date_falls_back_to_invoice_month
+    description: >
+      A completed episode with no surgery date is reported in its invoice_month, flagged as a
+      fallback, and stays eligible. The fallback month is checked against the fee window by
+      whole month: May invoice on a line starting June 1 is outside; June invoice is inside, also
+      on a line starting mid-June (the month overlaps the window).
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-FB,   fee_id: FEE-1,   episode_status: COMPLETED, surgery_date: null, invoice_month: 2026-04-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-IN,   fee_id: FEE-JUN, episode_status: COMPLETED, surgery_date: null, invoice_month: 2026-06-01, record_updated_at: "2026-06-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-OUT,  fee_id: FEE-JUN, episode_status: COMPLETED, surgery_date: null, invoice_month: 2026-05-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-DATE, fee_id: FEE-1,   episode_status: COMPLETED, surgery_date: 2026-03-31, invoice_month: 2026-04-01, record_updated_at: "2026-04-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-MID,  fee_id: FEE-MID, episode_status: COMPLETED, surgery_date: null, invoice_month: 2026-06-01, record_updated_at: "2026-06-20 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-1,   fee_type: CASE_RATE, effective_start: 2026-01-01, effective_end: 2026-12-31, is_orphan: false}
+          - {fee_id: FEE-JUN, fee_type: CASE_RATE, effective_start: 2026-06-01, effective_end: 2026-12-31, is_orphan: false}
+          - {fee_id: FEE-MID, fee_type: CASE_RATE, effective_start: 2026-06-15, effective_end: 2026-12-31, is_orphan: false}
+    expect:
+      rows:
+        - {episode_id: EP-FB,   surgery_month: 2026-04-01, surgery_month_source: invoice_month_fallback, is_revenue_eligible: true}
+        - {episode_id: EP-IN,   surgery_month: 2026-06-01, surgery_month_source: invoice_month_fallback, is_revenue_eligible: true}
+        - {episode_id: EP-OUT,  surgery_month: 2026-05-01, surgery_month_source: invoice_month_fallback, is_revenue_eligible: false}
+        - {episode_id: EP-DATE, surgery_month: 2026-03-01, surgery_month_source: surgery_date,           is_revenue_eligible: true}
+        - {episode_id: EP-MID,  surgery_month: 2026-06-01, surgery_month_source: invoice_month_fallback, is_revenue_eligible: true}
+
+  - name: ut_fact_episodes_revenue_exclusion_reasons
+    description: >
+      Only a completed episode earns the case rate. A completed episode is excluded, with its
+      reason, when it is a test record, bills to a fee line not in the schedule, bills to a
+      platform-fee line, has neither a surgery date nor an invoice month, or its surgery is
+      outside the fee window. A non-completed episode has no reason and is not eligible.
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-OK,     fee_id: FEE-CASE, episode_status: COMPLETED, surgery_date: 2026-05-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-TEST,   fee_id: FEE-CASE, episode_status: COMPLETED, surgery_date: 2026-05-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: true,  is_duplicated_in_source: false}
+          - {episode_id: EP-UNK,    fee_id: FEE-NONE, episode_status: COMPLETED, surgery_date: 2026-05-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-PLAT,   fee_id: FEE-PLAT, episode_status: COMPLETED, surgery_date: 2026-05-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-NODATE, fee_id: FEE-CASE, episode_status: COMPLETED, surgery_date: null,       record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-OUT,    fee_id: FEE-CASE, episode_status: COMPLETED, surgery_date: 2025-06-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-SCHED,  fee_id: FEE-CASE, episode_status: SCHEDULED, surgery_date: 2026-05-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-CASE, fee_type: CASE_RATE,    effective_start: 2026-01-01, effective_end: 2026-12-31, is_orphan: false}
+          - {fee_id: FEE-PLAT, fee_type: PLATFORM_FEE, effective_start: 2026-01-01, effective_end: 2026-12-31, is_orphan: false}
+    expect:
+      rows:
+        - {episode_id: EP-OK,     revenue_exclusion_reason: null,                            is_revenue_eligible: true}
+        - {episode_id: EP-TEST,   revenue_exclusion_reason: test record,                     is_revenue_eligible: false}
+        - {episode_id: EP-UNK,    revenue_exclusion_reason: fee line not in fee schedule,    is_revenue_eligible: false}
+        - {episode_id: EP-PLAT,   revenue_exclusion_reason: billed to a platform-fee line,   is_revenue_eligible: false}
+        - {episode_id: EP-NODATE, revenue_exclusion_reason: surgery date and invoice month missing, is_revenue_eligible: false}
+        - {episode_id: EP-OUT,    revenue_exclusion_reason: surgery outside fee line window, is_revenue_eligible: false}
+        - {episode_id: EP-SCHED,  revenue_exclusion_reason: null,                            is_revenue_eligible: false}
+
+  - name: ut_fact_episodes_exclusion_reason_precedence
+    description: >
+      When several exclusions apply, the documented order picks the reason: a test record on an
+      unknown fee line with no surgery date is reported as 'test record'.
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, fee_id: FEE-NONE, episode_status: COMPLETED, surgery_date: null, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: true, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows: []
+    expect:
+      rows:
+        - {episode_id: EP-1, revenue_exclusion_reason: test record, is_revenue_eligible: false}
+
+  - name: ut_fact_episodes_surgery_window_boundaries
+    description: >
+      The fee window is inclusive: surgery on effective_start or effective_end earns the case
+      rate; one day before the start or after the end does not.
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-START,  fee_id: FEE-1, episode_status: COMPLETED, surgery_date: 2026-01-01, record_updated_at: "2026-06-01 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-END,    fee_id: FEE-1, episode_status: COMPLETED, surgery_date: 2026-03-31, record_updated_at: "2026-06-01 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-BEFORE, fee_id: FEE-1, episode_status: COMPLETED, surgery_date: 2025-12-31, record_updated_at: "2026-06-01 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-AFTER,  fee_id: FEE-1, episode_status: COMPLETED, surgery_date: 2026-04-01, record_updated_at: "2026-06-01 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-1, fee_type: CASE_RATE, effective_start: 2026-01-01, effective_end: 2026-03-31, is_orphan: false}
+    expect:
+      rows:
+        - {episode_id: EP-START,  is_revenue_eligible: true}
+        - {episode_id: EP-END,    is_revenue_eligible: true}
+        - {episode_id: EP-BEFORE, is_revenue_eligible: false}
+        - {episode_id: EP-AFTER,  is_revenue_eligible: false}
+
+  - name: ut_fact_episodes_orphan_fee_line_stays_eligible
+    description: A completed episode on an orphan fee line (no program) still earns the case rate, under UNATTRIBUTED.
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-1, fee_id: FEE-390, episode_status: COMPLETED, surgery_date: 2026-05-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-390, fee_type: CASE_RATE, employer_id: UNATTRIBUTED, effective_start: 2026-01-01, effective_end: 2026-12-31, is_orphan: true}
+    expect:
+      rows:
+        - {episode_id: EP-1, employer_id: UNATTRIBUTED, is_orphan_fee_line: true, is_revenue_eligible: true}
+
+  # ---------------------------------------------------------------- gold_fact_revenue_monthly
+  - name: ut_fact_revenue_case_rate_eligible_episodes_discounted
+    description: >
+      Case revenue = eligible completed episodes in the surgery month x rate x (1 - discount).
+      A completed but ineligible episode adds nothing.
+    model: gold_fact_revenue_monthly
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-1, fee_type: CASE_RATE, program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, rate_usd: 1000.00, discount_rate: 0.1}
+      - input: ref('gold_dim_months')
+        rows: []
+      - input: ref('gold_dim_programs')
+        rows: []
+      - input: ref('gold_fact_episodes')
+        rows:
+          - {episode_id: EP-1, fee_id: FEE-1, surgery_month: 2026-04-01, is_revenue_eligible: true}
+          - {episode_id: EP-2, fee_id: FEE-1, surgery_month: 2026-04-01, is_revenue_eligible: true}
+          - {episode_id: EP-3, fee_id: FEE-1, surgery_month: 2026-04-01, is_revenue_eligible: false}
+          - {episode_id: EP-4, fee_id: FEE-1, surgery_month: 2026-06-01, is_revenue_eligible: true}
+      - input: ref('silver_stg_netsuite_billing_adjustments')
+        rows: []
+    expect:
+      rows:
+        - {revenue_line_id: CASE_RATE|FEE-1|2026-04, employer_id: EMP-001, episode_count: 2, gross_usd: 2000.00, discount_usd: 200.00, net_revenue_usd: 1800.00}
+        - {revenue_line_id: CASE_RATE|FEE-1|2026-06, employer_id: EMP-001, episode_count: 1, gross_usd: 1000.00, discount_usd: 100.00, net_revenue_usd: 900.00}
+
+  - name: ut_fact_revenue_platform_fee_every_effective_month
+    description: >
+      Platform fee = rate x (1 - discount), in full, for every calendar month the fee line is
+      effective, including a partial first month (starts 15 Apr) and partial last month (ends
+      10 Jun). No revenue in the month before the window. Not a function of episodes.
+    model: gold_fact_revenue_monthly
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-P, fee_type: PLATFORM_FEE, program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, rate_usd: 500.00, discount_rate: 0.1, effective_start: 2026-04-15, effective_end: 2026-06-10}
+      - input: ref('gold_dim_months')
+        rows:
+          - {month_start: 2026-03-01, is_on_or_before_as_of: true}
+          - {month_start: 2026-04-01, is_on_or_before_as_of: true}
+          - {month_start: 2026-05-01, is_on_or_before_as_of: true}
+          - {month_start: 2026-06-01, is_on_or_before_as_of: true}
+      - input: ref('gold_dim_programs')
+        rows: []
+      - input: ref('gold_fact_episodes')
+        rows: []
+      - input: ref('silver_stg_netsuite_billing_adjustments')
+        rows: []
+    expect:
+      rows:
+        - {revenue_line_id: PLATFORM_FEE|FEE-P|2026-04, gross_usd: 500.00, discount_usd: 50.00, net_revenue_usd: 450.00}
+        - {revenue_line_id: PLATFORM_FEE|FEE-P|2026-05, gross_usd: 500.00, discount_usd: 50.00, net_revenue_usd: 450.00}
+        - {revenue_line_id: PLATFORM_FEE|FEE-P|2026-06, gross_usd: 500.00, discount_usd: 50.00, net_revenue_usd: 450.00}
+
+  - name: ut_fact_revenue_adjustments_summed_not_discounted
+    description: >
+      Adjustments are summed per program and billing month (a credit and a true-up net off) and
+      added after discount: discount_usd is 0 even though the program's fee line carries a discount.
+    model: gold_fact_revenue_monthly
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-1, fee_type: CASE_RATE, program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, rate_usd: 1000.00, discount_rate: 0.2}
+      - input: ref('gold_dim_months')
+        rows: []
+      - input: ref('gold_dim_programs')
+        rows:
+          - {program_id: PRG-1, employer_id: EMP-001, employer_name: Parent}
+      - input: ref('gold_fact_episodes')
+        rows: []
+      - input: ref('silver_stg_netsuite_billing_adjustments')
+        rows:
+          - {memo_id: CM-1, program_id: PRG-1, billing_month: 2026-05-01, adjustment_usd: -100.00, is_posted_after_as_of: false}
+          - {memo_id: CM-2, program_id: PRG-1, billing_month: 2026-05-01, adjustment_usd: 300.00,  is_posted_after_as_of: false}
+    expect:
+      rows:
+        - {revenue_line_id: ADJUSTMENT|PRG-1|2026-05, employer_id: EMP-001, memo_count: 2, gross_usd: 200.00, discount_usd: 0.00, net_revenue_usd: 200.00}
+
+  - name: ut_fact_revenue_late_posted_adjustment_included_and_flagged
+    description: A memo for June posted after the as-of date is included in June revenue and counted in the posted-after columns.
+    model: gold_fact_revenue_monthly
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('gold_dim_fee_lines')
+        rows: []
+      - input: ref('gold_dim_months')
+        rows: []
+      - input: ref('gold_dim_programs')
+        rows:
+          - {program_id: PRG-1, employer_id: EMP-001, employer_name: Parent}
+      - input: ref('gold_fact_episodes')
+        rows: []
+      - input: ref('silver_stg_netsuite_billing_adjustments')
+        rows:
+          - {memo_id: CM-1, program_id: PRG-1, billing_month: 2026-06-01, adjustment_usd: -250.00, is_posted_after_as_of: false}
+          - {memo_id: CM-2, program_id: PRG-1, billing_month: 2026-06-01, adjustment_usd: 400.00,  is_posted_after_as_of: true}
+    expect:
+      rows:
+        - {revenue_line_id: ADJUSTMENT|PRG-1|2026-06, net_revenue_usd: 150.00, adjustment_memos_posted_after_as_of: 1, adjustment_usd_posted_after_as_of: 400.00}
+
+  - name: ut_fact_revenue_orphan_adjustment_unattributed
+    description: A memo for a program missing from Salesforce is kept, under UNATTRIBUTED, not dropped.
+    model: gold_fact_revenue_monthly
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('gold_dim_fee_lines')
+        rows: []
+      - input: ref('gold_dim_months')
+        rows: []
+      - input: ref('gold_dim_programs')
+        rows: []
+      - input: ref('gold_fact_episodes')
+        rows: []
+      - input: ref('silver_stg_netsuite_billing_adjustments')
+        rows:
+          - {memo_id: CM-1, program_id: PRG-404, billing_month: 2026-04-01, adjustment_usd: -75.00, is_posted_after_as_of: false}
+    expect:
+      rows:
+        - {revenue_line_id: ADJUSTMENT|PRG-404|2026-04, employer_id: UNATTRIBUTED, is_unattributed: true, net_revenue_usd: -75.00}
+
+  - name: ut_fact_revenue_excludes_months_after_as_of
+    description: >
+      Nothing is reported for months after the as-of month: a July surgery, a July memo and the
+      July platform-fee month are all dropped; June (the as-of month) is kept.
+    model: gold_fact_revenue_monthly
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-C, fee_type: CASE_RATE,    program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, rate_usd: 1000.00, discount_rate: 0.0, effective_start: 2026-01-01, effective_end: 2026-12-31}
+          - {fee_id: FEE-P, fee_type: PLATFORM_FEE, program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, rate_usd: 500.00,  discount_rate: 0.0, effective_start: 2026-06-01, effective_end: 2026-07-31}
+      - input: ref('gold_dim_months')
+        rows:
+          - {month_start: 2026-06-01, is_on_or_before_as_of: true}
+          - {month_start: 2026-07-01, is_on_or_before_as_of: false}
+      - input: ref('gold_dim_programs')
+        rows:
+          - {program_id: PRG-1, employer_id: EMP-001, employer_name: Parent}
+      - input: ref('gold_fact_episodes')
+        rows:
+          - {episode_id: EP-1, fee_id: FEE-C, surgery_month: 2026-07-01, is_revenue_eligible: true}
+      - input: ref('silver_stg_netsuite_billing_adjustments')
+        rows:
+          - {memo_id: CM-1, program_id: PRG-1, billing_month: 2026-07-01, adjustment_usd: 100.00, is_posted_after_as_of: true}
+    expect:
+      rows:
+        - {revenue_line_id: PLATFORM_FEE|FEE-P|2026-06, net_revenue_usd: 500.00}
+
+  # ---------------------------------------------------------------- gold_agg_revenue_employer_monthly
+  - name: ut_agg_revenue_employer_month_components_and_total
+    description: >
+      All of an employer's revenue lines in a month collapse to one row. Total = case + platform +
+      adjustments (a negative adjustment reduces it); gross and discount cover fee revenue only.
+    model: gold_agg_revenue_employer_monthly
+    given:
+      - input: ref('gold_fact_revenue_monthly')
+        rows:
+          - {revenue_component: CASE_RATE,    fee_id: FEE-1, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, episode_count: 1, gross_usd: 1000.00, discount_usd: 100.00, net_revenue_usd: 900.00, adjustment_usd_posted_after_as_of: 0}
+          - {revenue_component: CASE_RATE,    fee_id: FEE-2, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, episode_count: 1, gross_usd: 500.00,  discount_usd: 50.00,  net_revenue_usd: 450.00, adjustment_usd_posted_after_as_of: 0}
+          - {revenue_component: PLATFORM_FEE, fee_id: FEE-3, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, gross_usd: 200.00, discount_usd: 0.00, net_revenue_usd: 200.00, adjustment_usd_posted_after_as_of: 0}
+          - {revenue_component: ADJUSTMENT,   program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, gross_usd: -50.00, discount_usd: 0.00, net_revenue_usd: -50.00, adjustment_usd_posted_after_as_of: -50.00}
+      - input: ref('gold_dim_months')
+        rows:
+          - {month_start: 2026-04-01, year_quarter: 2026-Q2, is_on_or_before_as_of: true}
+    expect:
+      rows:
+        - {employer_month_id: EMP-001|2026-04, completed_episodes: 2, gross_revenue_usd: 1700.00, discount_usd: 150.00, case_revenue_usd: 1350.00, platform_fee_revenue_usd: 200.00, adjustments_usd: -50.00, total_revenue_usd: 1500.00, adjustments_posted_after_as_of_usd: -50.00}
+
+  - name: ut_agg_revenue_employer_month_zero_fills_to_as_of
+    description: >
+      Every employer gets a row for every month through the as-of month, zero when nothing was
+      earned (May); months after the as-of month (July) get no row.
+    model: gold_agg_revenue_employer_monthly
+    given:
+      - input: ref('gold_fact_revenue_monthly')
+        rows:
+          - {revenue_component: PLATFORM_FEE, fee_id: FEE-3, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, gross_usd: 200.00, discount_usd: 0.00, net_revenue_usd: 200.00, adjustment_usd_posted_after_as_of: 0}
+      - input: ref('gold_dim_months')
+        rows:
+          - {month_start: 2026-04-01, year_quarter: 2026-Q2, is_on_or_before_as_of: true}
+          - {month_start: 2026-05-01, year_quarter: 2026-Q2, is_on_or_before_as_of: true}
+          - {month_start: 2026-07-01, year_quarter: 2026-Q3, is_on_or_before_as_of: false}
+    expect:
+      rows:
+        - {employer_month_id: EMP-001|2026-04, total_revenue_usd: 200.00, completed_episodes: 0}
+        - {employer_month_id: EMP-001|2026-05, total_revenue_usd: 0.00,   completed_episodes: 0}
+
+  - name: ut_agg_pacing_elapsed_share_ratio_and_risk
+    description: >
+      Mid-window line: 30 of 60 days elapsed, 10 projected -> 5 expected; 2 eligible of 3 completed
+      -> ratio 0.4, risk 3 x 1000 x 0.9. Closed line ahead of plan -> risk 0. Not-started line ->
+      expected 0, ratio null.
+    model: gold_agg_pacing_fee_line
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-A, fee_type: CASE_RATE, employer_id: EMP-1, projected_episodes: 10, rate_usd: 1000, discount_rate: 0.1, effective_start: 2026-06-01, effective_end: 2026-07-30}
+          - {fee_id: FEE-B, fee_type: CASE_RATE, employer_id: EMP-1, projected_episodes: 1,  rate_usd: 1000, discount_rate: 0.0, effective_start: 2026-06-01, effective_end: 2026-06-30}
+          - {fee_id: FEE-C, fee_type: CASE_RATE, employer_id: EMP-1, projected_episodes: 10, rate_usd: 1000, discount_rate: 0.0, effective_start: 2026-07-01, effective_end: 2026-12-31}
+      - input: ref('gold_dim_programs')
+        rows: []
+      - input: ref('gold_fact_episodes')
+        rows:
+          - {fee_id: FEE-A, is_revenue_eligible: true}
+          - {fee_id: FEE-A, is_revenue_eligible: true}
+          - {fee_id: FEE-A, is_revenue_eligible: false}
+          - {fee_id: FEE-B, is_revenue_eligible: true}
+          - {fee_id: FEE-B, is_revenue_eligible: true}
+    expect:
+      rows:
+        - {fee_id: FEE-A, elapsed_share: 0.5, expected_episodes: 5.0, completed_episodes: 2, pacing_ratio: 0.4, revenue_at_risk_usd: 2700.00, is_window_closed: false}
+        - {fee_id: FEE-B, elapsed_share: 1.0, expected_episodes: 1.0, completed_episodes: 2, pacing_ratio: 2.0, revenue_at_risk_usd: 0.00,    is_window_closed: true}
+        - {fee_id: FEE-C, elapsed_share: 0.0, expected_episodes: 0.0, completed_episodes: 0, pacing_ratio: null, revenue_at_risk_usd: 0.00,  is_window_closed: false}

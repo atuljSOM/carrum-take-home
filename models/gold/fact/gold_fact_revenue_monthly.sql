@@ -1,16 +1,6 @@
 {{ config(alias='fact_revenue_monthly') }}
 
--- Grain: one row per revenue_component x source x revenue_month, where source is the fee line
--- for CASE_RATE and PLATFORM_FEE rows and the program for ADJUSTMENT rows.
--- Only months on or before the as-of month are included.
---
---   CASE_RATE     revenue-eligible completed episodes in the surgery month x rate x (1 - discount)
---   PLATFORM_FEE  rate x (1 - discount) for each month the fee line is effective
---   ADJUSTMENT    sum of NetSuite memos for the program and billing month, added after discount.
---                 Memos posted after as_of_date are included and counted in
---                 adjustment_memos_posted_after_as_of / adjustment_usd_posted_after_as_of.
---
--- Fee lines and memos with no valid program are kept under employer_id 'UNATTRIBUTED'.
+-- Grain: one row per revenue_component x fee line (program for adjustments) x month. Rules and columns: see the model's yml.
 
 with fee_lines as (
     select * from {{ ref('gold_dim_fee_lines') }}

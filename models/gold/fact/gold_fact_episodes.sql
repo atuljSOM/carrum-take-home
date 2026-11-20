@@ -1,19 +1,6 @@
 {{ config(alias='fact_episodes') }}
 
--- Grain: one row per episode that has at least one status record on or before as_of_date.
--- Current status = the episode's most recent record on or before as_of_date. Records written
--- after as_of_date are ignored for status (the extract is dated 2026-06-30, so they cannot be
--- trusted as of that date) but are summarized in later_* columns so their effect stays visible.
---
--- is_revenue_eligible marks the completed episodes that earn the case rate. A completed episode
--- is excluded, with the reason in revenue_exclusion_reason, when it is a test record, bills to a
--- fee line that is not in the fee schedule, bills to a platform-fee line, has neither a surgery
--- date nor an invoice month, or its surgery month is outside its fee line's effective window.
--- Orphan fee lines (no program) stay eligible and roll up to the "Unattributed" employer.
---
--- surgery_month is the reporting month. When surgery_date is missing it falls back to
--- invoice_month (flagged in surgery_month_source): the episode is completed, so the revenue is
--- earned; only its month is uncertain (invoice_month lags surgery month for late-month surgeries).
+-- Grain: one row per episode with a status record on or before var('as_of_date'). Rules and columns: see the model's yml.
 
 with records as (
     select * from {{ ref('silver_stg_care_platform_episodes') }}
