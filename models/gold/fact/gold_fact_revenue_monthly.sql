@@ -76,6 +76,16 @@ adjustments as (
         cast(null as decimal(12, 2))                                      as rate_usd,
         0.0                                                               as discount_rate,
         sum(memos.adjustment_usd)                                         as gross_usd,
+        coalesce(sum(memos.adjustment_usd) filter (where memos.reason = 'savings guarantee true-up'), 0)
+                                                                          as adjustments_savings_guarantee_usd,
+        coalesce(sum(memos.adjustment_usd) filter (where memos.reason = 'performance guarantee credit'), 0)
+                                                                          as adjustments_performance_guarantee_usd,
+        coalesce(sum(memos.adjustment_usd) filter (where memos.reason = 'goodwill credit'), 0)
+                                                                          as adjustments_goodwill_usd,
+        coalesce(sum(memos.adjustment_usd) filter (where memos.reason = 'invoice correction'), 0)
+                                                                          as adjustments_invoice_correction_usd,
+        coalesce(sum(memos.adjustment_usd) filter (where memos.reason not in ('savings guarantee true-up', 'performance guarantee credit', 'goodwill credit', 'invoice correction')), 0)
+                                                                          as adjustments_other_usd,
         count(*) filter (where memos.is_posted_after_as_of)               as adjustment_memos_posted_after_as_of,
         coalesce(sum(memos.adjustment_usd) filter (where memos.is_posted_after_as_of), 0)
                                                                           as adjustment_usd_posted_after_as_of
@@ -112,6 +122,11 @@ select
     cast(gross_usd as decimal(18, 2))                         as gross_usd,
     cast(round(gross_usd * discount_rate, 2) as decimal(18, 2)) as discount_usd,
     cast(gross_usd - round(gross_usd * discount_rate, 2) as decimal(18, 2)) as net_revenue_usd,
+    cast(coalesce(adjustments_savings_guarantee_usd, 0) as decimal(18, 2)) as adjustments_savings_guarantee_usd,
+    cast(coalesce(adjustments_performance_guarantee_usd, 0) as decimal(18, 2)) as adjustments_performance_guarantee_usd,
+    cast(coalesce(adjustments_goodwill_usd, 0) as decimal(18, 2)) as adjustments_goodwill_usd,
+    cast(coalesce(adjustments_invoice_correction_usd, 0) as decimal(18, 2)) as adjustments_invoice_correction_usd,
+    cast(coalesce(adjustments_other_usd, 0) as decimal(18, 2)) as adjustments_other_usd,
     adjustment_memos_posted_after_as_of,
     cast(adjustment_usd_posted_after_as_of as decimal(18, 2)) as adjustment_usd_posted_after_as_of
 from unioned

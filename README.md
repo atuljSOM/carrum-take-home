@@ -5,6 +5,8 @@ Asking questions of the built data (people or LLMs): see [AGENTS.md](AGENTS.md).
 
 ## Setup (macOS, clean clone)
 
+Requires Python 3.10–3.12 (`brew install python@3.11`); the stock macOS Python 3.9 cannot install the pinned dbt.
+
 ```bash
 git clone https://github.com/atuljSOM/carrum-take-home.git carrum-take-home && cd carrum-take-home
 python3.11 -m venv .venv && source .venv/bin/activate

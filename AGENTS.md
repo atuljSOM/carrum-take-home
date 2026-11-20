@@ -25,6 +25,7 @@ CLI, use the project's virtualenv instead (same read-only access):
 |---|---|---|
 | Revenue by employer, month, quarter; the CFO view | `agg_revenue_employer_monthly` | employer × month |
 | Revenue by program or service line | `agg_revenue_program_monthly` | program × month |
+| Adjustments by reason: guarantee true-ups and credits, goodwill, invoice corrections | either revenue table (`adjustments_<reason>_usd` columns) | as above |
 | Utilization, pacing, under-use, renewal risk, what to escalate | `agg_pacing_fee_line` | case-rate fee line, as of 2026-06-30 |
 | Data problems; "can I trust this number?" | `rpt_data_quality_register` | issue |
 
@@ -35,6 +36,7 @@ other `gold`, `silver` or `bronze` tables: the business rules are already applie
 
 - Data is as of **2026-06-30**. Q2 2026 = April–June (`year_quarter = '2026-Q2'`).
 - Revenue = `total_revenue_usd` = case-rate revenue + platform fees (after discount) + NetSuite adjustments.
+- What guarantees cost = `adjustments_savings_guarantee_usd + adjustments_performance_guarantee_usd`. The five `adjustments_<reason>_usd` columns sum to `adjustments_usd`.
 - An employer is the ultimate parent account. `UNATTRIBUTED` is revenue with no valid program: report it as its own line; never drop it or assign it to an employer.
 - `_usd` and episode columns add up across rows. `pacing_ratio` does not: for a group, use `sum(completed_episodes) / sum(expected_episodes)`.
 - `client_success_action` is the escalation rule (a documented judgement); use it rather than inventing thresholds.

@@ -235,6 +235,21 @@ models:
       - name: adjustments_usd
         description: NetSuite credits, true-ups and fees for the billing month (usually negative), added after discount.
         meta: {role: measure}
+      - name: adjustments_savings_guarantee_usd
+        description: "Savings guarantee true-ups (NetSuite reason 'savings guarantee true-up'). Part of adjustments_usd."
+        meta: {role: measure}
+      - name: adjustments_performance_guarantee_usd
+        description: "Performance guarantee credits (reason 'performance guarantee credit'). Part of adjustments_usd; two are positive, flagged in the register (DQ-20)."
+        meta: {role: measure}
+      - name: adjustments_goodwill_usd
+        description: "Goodwill credits (reason 'goodwill credit'). Part of adjustments_usd."
+        meta: {role: measure}
+      - name: adjustments_invoice_correction_usd
+        description: "Invoice corrections (reason 'invoice correction'). Part of adjustments_usd."
+        meta: {role: measure}
+      - name: adjustments_other_usd
+        description: "Adjustments with any other reason (none today). Keeps the five reason columns summing to adjustments_usd."
+        meta: {role: measure}
       - name: total_revenue_usd
         description: Recognized revenue = case_revenue_usd + platform_fee_revenue_usd + adjustments_usd.
         meta: {role: measure}
@@ -287,6 +302,21 @@ models:
         meta: {role: measure}
       - name: adjustments_usd
         description: NetSuite adjustments for the program and billing month.
+        meta: {role: measure}
+      - name: adjustments_savings_guarantee_usd
+        description: "Savings guarantee true-ups (NetSuite reason 'savings guarantee true-up'). Part of adjustments_usd."
+        meta: {role: measure}
+      - name: adjustments_performance_guarantee_usd
+        description: "Performance guarantee credits (reason 'performance guarantee credit'). Part of adjustments_usd; two are positive, flagged in the register (DQ-20)."
+        meta: {role: measure}
+      - name: adjustments_goodwill_usd
+        description: "Goodwill credits (reason 'goodwill credit'). Part of adjustments_usd."
+        meta: {role: measure}
+      - name: adjustments_invoice_correction_usd
+        description: "Invoice corrections (reason 'invoice correction'). Part of adjustments_usd."
+        meta: {role: measure}
+      - name: adjustments_other_usd
+        description: "Adjustments with any other reason (none today). Keeps the five reason columns summing to adjustments_usd."
         meta: {role: measure}
       - name: total_revenue_usd
         description: Recognized revenue = case + platform + adjustments.

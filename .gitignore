@@ -9,3 +9,6 @@ logs/
 
 # Personal working notes (not part of the submission)
 notes/
+
+# Personal Claude Code rules (not part of the submission)
+CLAUDE.local.md
