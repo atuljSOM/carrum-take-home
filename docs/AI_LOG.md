@@ -117,3 +117,21 @@
 - **Asked:** build gold model for one row per issue
 - **Did:** added a gold report model with one row per issue: counts and dollar impacts computed from the models on every build, hand-written text for detection, handling, test and where the fix belongs; added the 2c answer query
 - **Checked:** spot-checked the larger impacts against the earlier profiling and broke one down independently until it tied to the cent; the computed figure exposed an error in my own earlier pacing estimate, now corrected in my notes
+
+### 20. Part 3 approach
+
+- **Asked:** whether the optional chatbot should be a React or Streamlit app; then to adapt my team's metric-view convention so an LLM reads only aggregate tables
+- **Did:** pointed out the chatbot earns no credit and the scored work is the repo itself; proposed definitions on the aggregate tables, comments written into the database, and one routing file
+- **Checked:** read the brief's Part 3 wording and a production metric view before proposing
+
+### 21. LLM-facing layer
+
+- **Asked:** build it, including a program-level revenue table and moving the escalation rule into the pacing model
+- **Did:** added program × month revenue and made the employer table a roll-up of it; moved the escalation rule into the pacing model; marked dimensions and measures on the four LLM-facing tables; wrote descriptions into DuckDB as comments; added AGENTS.md with routing, rules and what the data cannot answer
+- **Checked:** the 2a and 2b outputs are unchanged; the program table sums to the same Q2 total; the new tests failed under deliberate breaks; fixed a list-ordering flaw that made the 2c output differ between builds
+
+### 22. Full definitions on the LLM-facing tables
+
+- **Asked:** whether the definitions were actually in the database
+- **Did:** found 20 columns on three LLM-facing tables with no definition; documented them and added a test that fails if any column on those tables lacks a comment in the database
+- **Checked:** every column on the four tables now has a comment in DuckDB; removing one description made the new test fail

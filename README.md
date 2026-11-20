@@ -1,6 +1,7 @@
 # Carrum Health — Staff Analytics Engineer Take-Home
 
 dbt Core + DuckDB over Salesforce, contracting, care-platform and NetSuite extracts.
+Asking questions of the built data (people or LLMs): see [AGENTS.md](AGENTS.md).
 
 ## Setup (macOS, clean clone)
 

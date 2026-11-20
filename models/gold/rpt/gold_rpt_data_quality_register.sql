@@ -148,7 +148,7 @@ metrics as (
         null,
         (select count(*) from ep where revenue_exclusion_reason = 'surgery outside fee line window'),
         (select string_agg(fee_id || ' pacing ' || round(pacing_ratio, 2) || ' -> '
-                || round((completed_episodes + n) / expected_episodes, 2), '; ')
+                || round((completed_episodes + n) / expected_episodes, 2), '; ' order by fee_id)
            from pacing join (select fee_id, count(*) as n from ep
                               where revenue_exclusion_reason = 'surgery outside fee line window' group by 1) using (fee_id))
 
@@ -158,7 +158,7 @@ metrics as (
         (select coalesce(sum(rev.gross_usd * (fee.discount_rate - fee.discount_pct_raw)), 0)
            from rev join fee using (fee_id) where rev.in_q and fee.discount_pct_raw > 1),
         null, 0,
-        (select string_agg(fee_id || ' entered ' || discount_pct_raw, '; ') from fee where discount_pct_raw > 1)
+        (select string_agg(fee_id || ' entered ' || discount_pct_raw, '; ' order by fee_id) from fee where discount_pct_raw > 1)
 
     -- DQ-10 discount_pct blank
     union all select 'DQ-10',
@@ -179,7 +179,7 @@ metrics as (
         (select count(*) from fee where is_orphan),
         (select -coalesce(sum(rev.net_revenue_usd), 0) from rev join fee using (fee_id) where rev.in_q and fee.is_orphan),
         null, 0,
-        (select string_agg(fee_id, ', ') from fee where is_orphan)
+        (select string_agg(fee_id, ', ' order by fee_id) from fee where is_orphan)
 
     -- DQ-13 account hierarchy: duplicate account, union, missing parent
     union all select 'DQ-13',
@@ -189,7 +189,7 @@ metrics as (
            from rev join {{ ref('gold_dim_programs') }} as prg using (program_id)
           where rev.in_q and prg.account_id <> prg.employer_id),
         0,
-        (select string_agg(account_id || ' -> ' || employer_id || case when is_parent_missing then ' (parent missing)' else '' end, '; ')
+        (select string_agg(account_id || ' -> ' || employer_id || case when is_parent_missing then ' (parent missing)' else '' end, '; ' order by account_id)
            from {{ ref('gold_dim_employers') }} where account_id <> employer_id or is_parent_missing)
 
     -- DQ-14 program went live after its fee lines started
@@ -204,7 +204,7 @@ metrics as (
                 || round(completed_episodes / (projected_episodes
                      * (datediff('day', go_live_date, p.as_of_date) + 1)
                      / (datediff('day', go_live_date, effective_end) + 1)), 2)
-                || ' if pro-rated from go-live ' || go_live_date, '; ')
+                || ' if pro-rated from go-live ' || go_live_date, '; ' order by fee_id)
            from pacing cross join params as p where is_go_live_after_window_start)
 
     -- DQ-15 duplicate NetSuite memo
@@ -212,28 +212,28 @@ metrics as (
         (select sum(source_row_count - 1) from memo),
         (select coalesce(sum(adjustment_usd * (source_row_count - 1)), 0) from memo where in_q),
         null, 0,
-        (select string_agg(memo_id, ', ') from memo where source_row_count > 1)
+        (select string_agg(memo_id, ', ' order by memo_id) from memo where source_row_count > 1)
 
     -- DQ-16 billing_month not in YYYY-MM
     union all select 'DQ-16',
         (select count(*) from memo where billing_month_source_format <> 'YYYY-MM'),
         (select -coalesce(sum(adjustment_usd), 0) from memo where in_q and billing_month_source_format <> 'YYYY-MM'),
         null, 0,
-        (select string_agg(memo_id || ' (' || billing_month_source_format || ')', ', ') from memo where billing_month_source_format <> 'YYYY-MM')
+        (select string_agg(memo_id || ' (' || billing_month_source_format || ')', ', ' order by memo_id) from memo where billing_month_source_format <> 'YYYY-MM')
 
     -- DQ-17 memo on a program not in Salesforce
     union all select 'DQ-17',
         (select count(*) from memo where not has_program),
         (select -coalesce(sum(adjustment_usd), 0) from memo where in_q and not has_program),
         null, 0,
-        (select string_agg(memo_id || ' on ' || program_id, ', ') from memo where not has_program)
+        (select string_agg(memo_id || ' on ' || program_id, ', ' order by memo_id) from memo where not has_program)
 
     -- DQ-18 memos posted after the as-of date
     union all select 'DQ-18',
         (select count(*) from memo where is_posted_after_as_of),
         (select -coalesce(sum(adjustment_usd), 0) from memo where in_q and is_posted_after_as_of),
         null, 0,
-        (select string_agg(memo_id, ', ') from memo where is_posted_after_as_of)
+        (select string_agg(memo_id, ', ' order by memo_id) from memo where is_posted_after_as_of)
 
     -- DQ-19 outlier memo (over 5x the median absolute amount)
     union all select 'DQ-19',
@@ -241,7 +241,7 @@ metrics as (
         (select -coalesce(sum(adjustment_usd), 0) from memo
           where in_q and abs(adjustment_usd) > 5 * (select median(abs(adjustment_usd)) from memo)),
         null, 0,
-        (select string_agg(memo_id || ' ' || adjustment_usd || ' (' || reason || ')', ', ') from memo
+        (select string_agg(memo_id || ' ' || adjustment_usd || ' (' || reason || ')', ', ' order by memo_id) from memo
           where abs(adjustment_usd) > 5 * (select median(abs(adjustment_usd)) from memo))
 
     -- DQ-20 "credit" memos with a positive amount
@@ -249,7 +249,7 @@ metrics as (
         (select count(*) from memo where reason like '%credit%' and adjustment_usd > 0),
         (select -2 * coalesce(sum(adjustment_usd), 0) from memo where in_q and reason like '%credit%' and adjustment_usd > 0),
         null, 0,
-        (select string_agg(memo_id || ' +' || adjustment_usd, ', ') from memo where reason like '%credit%' and adjustment_usd > 0)
+        (select string_agg(memo_id || ' +' || adjustment_usd, ', ' order by memo_id) from memo where reason like '%credit%' and adjustment_usd > 0)
 
     -- DQ-21 invoice_month lags the surgery month
     union all select 'DQ-21',

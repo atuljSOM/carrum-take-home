@@ -17,6 +17,11 @@ vars:
 
 models:
   carrum:
+    # Write model and column descriptions into the DuckDB file as comments, so a reader of the
+    # database alone (person or LLM) sees the definitions.
+    +persist_docs:
+      relation: true
+      columns: true
     # Medallion layers; the physical schema is the layer name (see macros/generate_schema_name.sql).
     bronze:
       +schema: bronze

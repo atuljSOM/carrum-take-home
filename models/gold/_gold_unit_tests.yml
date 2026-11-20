@@ -433,34 +433,45 @@ unit_tests:
         - {revenue_line_id: PLATFORM_FEE|FEE-P|2026-06, net_revenue_usd: 500.00}
 
   # ---------------------------------------------------------------- gold_agg_revenue_employer_monthly
-  - name: ut_agg_revenue_employer_month_components_and_total
+  - name: ut_agg_revenue_program_month_components_and_total
     description: >
-      All of an employer's revenue lines in a month collapse to one row. Total = case + platform +
-      adjustments (a negative adjustment reduces it); gross and discount cover fee revenue only.
-    model: gold_agg_revenue_employer_monthly
+      All of a program's revenue lines in a month collapse to one row with its program name and
+      service line. Total = case + platform + adjustments (a negative adjustment reduces it); gross
+      and discount cover fee revenue only. Revenue with no valid program (an orphan fee line, a memo
+      on an unknown program) lands on one UNATTRIBUTED row.
+    model: gold_agg_revenue_program_monthly
     given:
       - input: ref('gold_fact_revenue_monthly')
         rows:
-          - {revenue_component: CASE_RATE,    fee_id: FEE-1, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, episode_count: 1, gross_usd: 1000.00, discount_usd: 100.00, net_revenue_usd: 900.00, adjustment_usd_posted_after_as_of: 0}
-          - {revenue_component: CASE_RATE,    fee_id: FEE-2, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, episode_count: 1, gross_usd: 500.00,  discount_usd: 50.00,  net_revenue_usd: 450.00, adjustment_usd_posted_after_as_of: 0}
-          - {revenue_component: PLATFORM_FEE, fee_id: FEE-3, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, gross_usd: 200.00, discount_usd: 0.00, net_revenue_usd: 200.00, adjustment_usd_posted_after_as_of: 0}
+          - {revenue_component: CASE_RATE,    fee_id: FEE-1, program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, episode_count: 1, gross_usd: 1000.00, discount_usd: 100.00, net_revenue_usd: 900.00, adjustment_usd_posted_after_as_of: 0}
+          - {revenue_component: CASE_RATE,    fee_id: FEE-2, program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, episode_count: 1, gross_usd: 500.00,  discount_usd: 50.00,  net_revenue_usd: 450.00, adjustment_usd_posted_after_as_of: 0}
+          - {revenue_component: PLATFORM_FEE, fee_id: FEE-3, program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, gross_usd: 200.00, discount_usd: 0.00, net_revenue_usd: 200.00, adjustment_usd_posted_after_as_of: 0}
           - {revenue_component: ADJUSTMENT,   program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, gross_usd: -50.00, discount_usd: 0.00, net_revenue_usd: -50.00, adjustment_usd_posted_after_as_of: -50.00}
+          - {revenue_component: CASE_RATE,    fee_id: FEE-9, program_id: null, employer_id: UNATTRIBUTED, employer_name: Unattributed, is_unattributed: true, revenue_month: 2026-04-01, episode_count: 1, gross_usd: 300.00, discount_usd: 0.00, net_revenue_usd: 300.00, adjustment_usd_posted_after_as_of: 0}
+          - {revenue_component: ADJUSTMENT,   program_id: PRG-X, employer_id: UNATTRIBUTED, employer_name: Unattributed, is_unattributed: true, revenue_month: 2026-04-01, gross_usd: -10.00, discount_usd: 0.00, net_revenue_usd: -10.00, adjustment_usd_posted_after_as_of: 0}
+      - input: ref('gold_dim_programs')
+        rows:
+          - {program_id: PRG-1, program_name: Cardiac, service_line: Cardiac}
       - input: ref('gold_dim_months')
         rows:
           - {month_start: 2026-04-01, year_quarter: 2026-Q2, is_on_or_before_as_of: true}
     expect:
       rows:
-        - {employer_month_id: EMP-001|2026-04, completed_episodes: 2, gross_revenue_usd: 1700.00, discount_usd: 150.00, case_revenue_usd: 1350.00, platform_fee_revenue_usd: 200.00, adjustments_usd: -50.00, total_revenue_usd: 1500.00, adjustments_posted_after_as_of_usd: -50.00}
+        - {program_month_id: PRG-1|2026-04, program_name: Cardiac, service_line: Cardiac, completed_episodes: 2, gross_revenue_usd: 1700.00, discount_usd: 150.00, case_revenue_usd: 1350.00, platform_fee_revenue_usd: 200.00, adjustments_usd: -50.00, total_revenue_usd: 1500.00, adjustments_posted_after_as_of_usd: -50.00}
+        - {program_month_id: UNATTRIBUTED|2026-04, program_name: Unattributed (no valid program), service_line: null, completed_episodes: 1, gross_revenue_usd: 300.00, discount_usd: 0.00, case_revenue_usd: 300.00, platform_fee_revenue_usd: 0.00, adjustments_usd: -10.00, total_revenue_usd: 290.00, adjustments_posted_after_as_of_usd: 0.00}
 
-  - name: ut_agg_revenue_employer_month_zero_fills_to_as_of
+  - name: ut_agg_revenue_program_month_zero_fills_to_as_of
     description: >
-      Every employer gets a row for every month through the as-of month, zero when nothing was
+      Every program gets a row for every month through the as-of month, zero when nothing was
       earned (May); months after the as-of month (July) get no row.
-    model: gold_agg_revenue_employer_monthly
+    model: gold_agg_revenue_program_monthly
     given:
       - input: ref('gold_fact_revenue_monthly')
         rows:
-          - {revenue_component: PLATFORM_FEE, fee_id: FEE-3, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, gross_usd: 200.00, discount_usd: 0.00, net_revenue_usd: 200.00, adjustment_usd_posted_after_as_of: 0}
+          - {revenue_component: PLATFORM_FEE, fee_id: FEE-3, program_id: PRG-1, employer_id: EMP-001, employer_name: Parent, is_unattributed: false, revenue_month: 2026-04-01, gross_usd: 200.00, discount_usd: 0.00, net_revenue_usd: 200.00, adjustment_usd_posted_after_as_of: 0}
+      - input: ref('gold_dim_programs')
+        rows:
+          - {program_id: PRG-1, program_name: Cardiac, service_line: Cardiac}
       - input: ref('gold_dim_months')
         rows:
           - {month_start: 2026-04-01, year_quarter: 2026-Q2, is_on_or_before_as_of: true}
@@ -468,14 +479,15 @@ unit_tests:
           - {month_start: 2026-07-01, year_quarter: 2026-Q3, is_on_or_before_as_of: false}
     expect:
       rows:
-        - {employer_month_id: EMP-001|2026-04, total_revenue_usd: 200.00, completed_episodes: 0}
-        - {employer_month_id: EMP-001|2026-05, total_revenue_usd: 0.00,   completed_episodes: 0}
+        - {program_month_id: PRG-1|2026-04, total_revenue_usd: 200.00, completed_episodes: 0}
+        - {program_month_id: PRG-1|2026-05, total_revenue_usd: 0.00,   completed_episodes: 0}
 
   - name: ut_agg_pacing_elapsed_share_ratio_and_risk
     description: >
       Mid-window line: 30 of 60 days elapsed, 10 projected -> 5 expected; 2 eligible of 3 completed
-      -> ratio 0.4, risk 3 x 1000 x 0.9. Closed line ahead of plan -> risk 0. Not-started line ->
-      expected 0, ratio null.
+      -> ratio 0.4, risk 3 x 1000 x 0.9, watch (only 30 days in). Closed line ahead of plan -> risk
+      0, no action. Not-started line -> expected 0, ratio null, no action. Established line with
+      nothing completed and $181k at risk -> escalate.
     model: gold_agg_pacing_fee_line
     overrides:
       vars: {as_of_date: "2026-06-30"}
@@ -485,6 +497,7 @@ unit_tests:
           - {fee_id: FEE-A, fee_type: CASE_RATE, employer_id: EMP-1, projected_episodes: 10, rate_usd: 1000, discount_rate: 0.1, effective_start: 2026-06-01, effective_end: 2026-07-30}
           - {fee_id: FEE-B, fee_type: CASE_RATE, employer_id: EMP-1, projected_episodes: 1,  rate_usd: 1000, discount_rate: 0.0, effective_start: 2026-06-01, effective_end: 2026-06-30}
           - {fee_id: FEE-C, fee_type: CASE_RATE, employer_id: EMP-1, projected_episodes: 10, rate_usd: 1000, discount_rate: 0.0, effective_start: 2026-07-01, effective_end: 2026-12-31}
+          - {fee_id: FEE-D, fee_type: CASE_RATE, employer_id: EMP-1, projected_episodes: 365, rate_usd: 1000, discount_rate: 0.0, effective_start: 2026-01-01, effective_end: 2026-12-31}
       - input: ref('gold_dim_programs')
         rows: []
       - input: ref('gold_fact_episodes')
@@ -496,6 +509,7 @@ unit_tests:
           - {fee_id: FEE-B, is_revenue_eligible: true}
     expect:
       rows:
-        - {fee_id: FEE-A, elapsed_share: 0.5, expected_episodes: 5.0, completed_episodes: 2, pacing_ratio: 0.4, revenue_at_risk_usd: 2700.00, is_window_closed: false}
-        - {fee_id: FEE-B, elapsed_share: 1.0, expected_episodes: 1.0, completed_episodes: 2, pacing_ratio: 2.0, revenue_at_risk_usd: 0.00,    is_window_closed: true}
-        - {fee_id: FEE-C, elapsed_share: 0.0, expected_episodes: 0.0, completed_episodes: 0, pacing_ratio: null, revenue_at_risk_usd: 0.00,  is_window_closed: false}
+        - {fee_id: FEE-A, elapsed_share: 0.5, expected_episodes: 5.0, completed_episodes: 2, pacing_ratio: 0.4, revenue_at_risk_usd: 2700.00, is_window_closed: false, client_success_action: watch}
+        - {fee_id: FEE-B, elapsed_share: 1.0, expected_episodes: 1.0, completed_episodes: 2, pacing_ratio: 2.0, revenue_at_risk_usd: 0.00,    is_window_closed: true,  client_success_action: null}
+        - {fee_id: FEE-C, elapsed_share: 0.0, expected_episodes: 0.0, completed_episodes: 0, pacing_ratio: null, revenue_at_risk_usd: 0.00,  is_window_closed: false, client_success_action: null}
+        - {fee_id: FEE-D, elapsed_share: 0.4958904109589041, expected_episodes: 181.0, completed_episodes: 0, pacing_ratio: 0.0, revenue_at_risk_usd: 181000.00, is_window_closed: false, client_success_action: escalate}

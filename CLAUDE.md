@@ -3,6 +3,8 @@
 Carrum Health Staff Analytics Engineer take-home: dbt Core + DuckDB over five CSV extracts.
 Spec: [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md) (transcribed from the .docx in the same folder; the .docx is the original).
 
+**Answering questions about the data (not building the project)? Follow [AGENTS.md](AGENTS.md) and ignore the rest of this file.**
+
 ## Environment
 
 - Python 3.11 venv at `.venv`; versions pinned in `requirements.txt`.

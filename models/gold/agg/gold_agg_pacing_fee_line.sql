@@ -30,31 +30,48 @@ windowed as (
     left join programs  on programs.program_id = fee_lines.program_id
     left join completed on completed.fee_id = fee_lines.fee_id
 )
+,
+
+paced as (
+    select
+        fee_id,
+        program_id,
+        program_name,
+        employer_id,
+        employer_name,
+        employer_id = 'UNATTRIBUTED'                                          as is_unattributed,
+        effective_start,
+        effective_end,
+        go_live_date,
+        window_days,
+        elapsed_days,
+        elapsed_days / window_days                                            as elapsed_share,
+        projected_episodes,
+        projected_episodes * elapsed_days / window_days                       as expected_episodes,
+        completed_episodes,
+        greatest(projected_episodes * elapsed_days / window_days - completed_episodes, 0)
+                                                                              as shortfall_episodes,
+        completed_episodes / nullif(projected_episodes * elapsed_days / window_days, 0)
+                                                                              as pacing_ratio,
+        rate_usd,
+        discount_rate,
+        cast(round(greatest(projected_episodes * elapsed_days / window_days - completed_episodes, 0)
+                   * rate_usd * (1 - discount_rate), 2) as decimal(18, 2))    as revenue_at_risk_usd,
+        elapsed_days = window_days                                            as is_window_closed,
+        go_live_date > effective_start                                        as is_go_live_after_window_start
+    from windowed
+)
 
 select
-    fee_id,
-    program_id,
-    program_name,
-    employer_id,
-    employer_name,
-    employer_id = 'UNATTRIBUTED'                                          as is_unattributed,
-    effective_start,
-    effective_end,
-    go_live_date,
-    window_days,
-    elapsed_days,
-    elapsed_days / window_days                                            as elapsed_share,
-    projected_episodes,
-    projected_episodes * elapsed_days / window_days                       as expected_episodes,
-    completed_episodes,
-    greatest(projected_episodes * elapsed_days / window_days - completed_episodes, 0)
-                                                                          as shortfall_episodes,
-    completed_episodes / nullif(projected_episodes * elapsed_days / window_days, 0)
-                                                                          as pacing_ratio,
-    rate_usd,
-    discount_rate,
-    cast(round(greatest(projected_episodes * elapsed_days / window_days - completed_episodes, 0)
-               * rate_usd * (1 - discount_rate), 2) as decimal(18, 2))    as revenue_at_risk_usd,
-    elapsed_days = window_days                                            as is_window_closed,
-    go_live_date > effective_start                                        as is_go_live_after_window_start
-from windowed
+    *,
+    -- Judgement thresholds (documented in the yml): escalate a material, established, attributed
+    -- line pacing well behind; watch any other line behind 0.75.
+    case
+        when pacing_ratio is null or pacing_ratio >= 0.75 then null
+        when not is_unattributed
+         and revenue_at_risk_usd >= 40000
+         and elapsed_days >= 60
+         and not coalesce(is_go_live_after_window_start, false) then 'escalate'
+        else 'watch'
+    end as client_success_action
+from paced
