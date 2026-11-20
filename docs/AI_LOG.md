@@ -178,3 +178,9 @@
 - **Did:** one-line eval result in the findings; corrected the log's numbering and agent count; README now has the docs step, why the CSVs are sources not seeds, and the Part 3 pointers
 - **Checked:** see the clean-clone run in this entry's commit
 
+
+### 30. Fixes from a review of the submission
+
+- **Asked:** fix three gaps: no Python prerequisite, adjustment reasons missing from the LLM-facing tables, and a personal CLAUDE.md
+- **Did:** README states the Python version; both revenue tables split adjustments by reason and AGENTS.md routes guarantee questions to them; personal rules moved out of CLAUDE.md into a gitignored file
+- **Checked:** reason amounts tie to the NetSuite memos to the cent; new invariant and unit test fail under deliberate breaks; build passes and the answer CSVs are unchanged

@@ -16,6 +16,11 @@ select
     sum(case_revenue_usd)                   as case_revenue_usd,
     sum(platform_fee_revenue_usd)           as platform_fee_revenue_usd,
     sum(adjustments_usd)                    as adjustments_usd,
+    sum(adjustments_savings_guarantee_usd)  as adjustments_savings_guarantee_usd,
+    sum(adjustments_performance_guarantee_usd) as adjustments_performance_guarantee_usd,
+    sum(adjustments_goodwill_usd)           as adjustments_goodwill_usd,
+    sum(adjustments_invoice_correction_usd) as adjustments_invoice_correction_usd,
+    sum(adjustments_other_usd)              as adjustments_other_usd,
     sum(total_revenue_usd)                  as total_revenue_usd,
     sum(adjustments_posted_after_as_of_usd) as adjustments_posted_after_as_of_usd
 from {{ ref('gold_agg_revenue_program_monthly') }}

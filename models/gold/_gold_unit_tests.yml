@@ -337,6 +337,7 @@ unit_tests:
     description: >
       Adjustments are summed per program and billing month (a credit and a true-up net off) and
       added after discount: discount_usd is 0 even though the program's fee line carries a discount.
+      Each amount also lands in its reason column; an unknown reason goes to adjustments_other_usd.
     model: gold_fact_revenue_monthly
     overrides:
       vars: {as_of_date: "2026-06-30"}
@@ -353,11 +354,12 @@ unit_tests:
         rows: []
       - input: ref('silver_stg_netsuite_billing_adjustments')
         rows:
-          - {memo_id: CM-1, program_id: PRG-1, billing_month: 2026-05-01, adjustment_usd: -100.00, is_posted_after_as_of: false}
-          - {memo_id: CM-2, program_id: PRG-1, billing_month: 2026-05-01, adjustment_usd: 300.00,  is_posted_after_as_of: false}
+          - {memo_id: CM-1, program_id: PRG-1, billing_month: 2026-05-01, adjustment_usd: -100.00, reason: goodwill credit,           is_posted_after_as_of: false}
+          - {memo_id: CM-2, program_id: PRG-1, billing_month: 2026-05-01, adjustment_usd: 300.00,  reason: savings guarantee true-up, is_posted_after_as_of: false}
+          - {memo_id: CM-3, program_id: PRG-1, billing_month: 2026-05-01, adjustment_usd: -40.00,  reason: late fee,                  is_posted_after_as_of: false}
     expect:
       rows:
-        - {revenue_line_id: ADJUSTMENT|PRG-1|2026-05, employer_id: EMP-001, memo_count: 2, gross_usd: 200.00, discount_usd: 0.00, net_revenue_usd: 200.00}
+        - {revenue_line_id: ADJUSTMENT|PRG-1|2026-05, employer_id: EMP-001, memo_count: 3, gross_usd: 160.00, discount_usd: 0.00, net_revenue_usd: 160.00, adjustments_goodwill_usd: -100.00, adjustments_savings_guarantee_usd: 300.00, adjustments_performance_guarantee_usd: 0.00, adjustments_invoice_correction_usd: 0.00, adjustments_other_usd: -40.00}
 
   - name: ut_fact_revenue_late_posted_adjustment_included_and_flagged
     description: A memo for June posted after the as-of date is included in June revenue and counted in the posted-after columns.

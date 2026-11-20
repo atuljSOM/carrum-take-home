@@ -32,6 +32,11 @@ totals as (
         sum(gross_usd)       filter (where revenue_component <> 'ADJUSTMENT')  as gross_revenue_usd,
         sum(discount_usd)                                                      as discount_usd,
         sum(episode_count)                                                     as completed_episodes,
+        sum(adjustments_savings_guarantee_usd)                       as adjustments_savings_guarantee_usd,
+        sum(adjustments_performance_guarantee_usd)                   as adjustments_performance_guarantee_usd,
+        sum(adjustments_goodwill_usd)                                as adjustments_goodwill_usd,
+        sum(adjustments_invoice_correction_usd)                      as adjustments_invoice_correction_usd,
+        sum(adjustments_other_usd)                                   as adjustments_other_usd,
         sum(adjustment_usd_posted_after_as_of)                                 as adjustments_posted_after_as_of_usd
     from revenue
     group by all
@@ -53,6 +58,11 @@ select
     coalesce(totals.case_revenue_usd, 0)                                    as case_revenue_usd,
     coalesce(totals.platform_fee_revenue_usd, 0)                            as platform_fee_revenue_usd,
     coalesce(totals.adjustments_usd, 0)                                     as adjustments_usd,
+    coalesce(totals.adjustments_savings_guarantee_usd, 0)               as adjustments_savings_guarantee_usd,
+    coalesce(totals.adjustments_performance_guarantee_usd, 0)           as adjustments_performance_guarantee_usd,
+    coalesce(totals.adjustments_goodwill_usd, 0)                        as adjustments_goodwill_usd,
+    coalesce(totals.adjustments_invoice_correction_usd, 0)              as adjustments_invoice_correction_usd,
+    coalesce(totals.adjustments_other_usd, 0)                           as adjustments_other_usd,
     coalesce(totals.case_revenue_usd, 0)
       + coalesce(totals.platform_fee_revenue_usd, 0)
       + coalesce(totals.adjustments_usd, 0)                                 as total_revenue_usd,

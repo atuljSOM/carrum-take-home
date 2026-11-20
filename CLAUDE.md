@@ -26,15 +26,10 @@ duckdb carrum.duckdb        # interactive SQL
 
 ## Working rules
 
-- Every number that appears in an output or the write-up comes from a query saved in the repo. Don't quote ad-hoc results.
+- Numbers in `outputs/` and `findings.md` come from queries saved in the repo.
 - The README must run from a clean clone. Update it in the same change as anything it depends on.
-- Log each AI-assisted step in `docs/AI_LOG.md` (asked / did / checked): one short line each, no counts, IDs or lists that live elsewhere in the repo. Put the detail and decisions behind each entry in `notes/DECISIONS.md` (gitignored, personal).
-- Write down an assumption before code relies on it: in the model's yml description; working detail in `notes/DECISIONS.md`.
-- PR descriptions use three sections, a few lines each:
-  - `## What`: the change, in one or two sentences; name the models touched.
-  - `## Why`: the business or technical reason; cite the brief or a CLAUDE.md rule where one applies.
-  - `## Testing`: the commands run and their results (`dbt build` pass/warn/error counts, row counts, before/after numbers).
-  Add a table or lineage diagram only when it makes the change clearer.
+- Log each AI-assisted step in `docs/AI_LOG.md` (asked / did / checked): one short line each, no counts, IDs or lists that live elsewhere in the repo.
+- Write down an assumption in the model's yml description before code relies on it.
 - When you find a data anomaly, stop and report it with counts. Don't silently clean it.
 
 ## Medallion structure (always follow)

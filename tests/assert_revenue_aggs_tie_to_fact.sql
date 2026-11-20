@@ -1,6 +1,7 @@
 -- Reconciliation: the revenue aggregates lose and add nothing.
 --   1. gold_agg_revenue_program_monthly: each component per program x month equals the matching
---      gold_fact_revenue_monthly rows, and total = case + platform + adjustments.
+--      gold_fact_revenue_monthly rows, total = case + platform + adjustments, and the adjustment
+--      reason columns sum to adjustments.
 --   2. gold_agg_revenue_employer_monthly (the CFO view, Part 2a): each employer x month equals the
 --      sum of its programs.
 -- Catches a dropped or duplicated program, a fan-out join, a component in the wrong column, or a
@@ -35,6 +36,10 @@ program_check as (
        or coalesce(fact.adjustments_usd, 0) <> program_agg.adjustments_usd
        or program_agg.total_revenue_usd
           <> program_agg.case_revenue_usd + program_agg.platform_fee_revenue_usd + program_agg.adjustments_usd
+       or program_agg.adjustments_usd
+          <> program_agg.adjustments_savings_guarantee_usd + program_agg.adjustments_performance_guarantee_usd
+           + program_agg.adjustments_goodwill_usd + program_agg.adjustments_invoice_correction_usd
+           + program_agg.adjustments_other_usd
 ),
 
 employer_from_programs as (
