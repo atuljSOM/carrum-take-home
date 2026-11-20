@@ -15,6 +15,12 @@ dbt build
 
 Writes `carrum.duckdb` in the repo root. Close other DuckDB sessions on it first (single writer).
 
+Docs: `dbt docs generate && dbt docs serve`.
+
+**Why sources, not seeds.** The CSVs are dbt sources read in place (dbt-duckdb external location),
+every column as text: the files are never copied or edited, and a malformed value reaches the
+bronze contract as data to test instead of failing or being silently coerced at load.
+
 ## Layers
 
 | Schema | Brief's term | Holds |
@@ -43,3 +49,10 @@ python scripts/export_answers.py      # writes outputs/<analysis>.csv
 | 2a | `analyses/q2a_revenue_by_employer_q2_2026.sql` | `outputs/q2a_revenue_by_employer_q2_2026.csv` |
 | 2b | `analyses/q2b_utilization_risk.sql` | `outputs/q2b_utilization_risk.csv` |
 | 2c | `analyses/q2c_data_quality_register.sql` | `outputs/q2c_data_quality_register.csv` |
+
+## Part 3
+
+- Questions about the data: [AGENTS.md](AGENTS.md) (four LLM-facing gold tables; definitions are also stored as comments in `carrum.duckdb`).
+- Eval: `eval/run.sh` (headless Claude Code on a fresh clone; needs a Claude Code login). Results and transcripts: `eval/results/`.
+- Write-up and Part 4: [findings.md](findings.md).
+

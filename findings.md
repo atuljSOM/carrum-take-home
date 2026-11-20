@@ -123,7 +123,8 @@ savings versus claims, surgeon volumes). Answers are graded against the marts. T
 passed all eight, but the transcripts showed some answers were taken from files, not queries;
 I fixed the project (the query command in `AGENTS.md`, employer names on flagged memos in the
 register), not the instruction, and re-ran: every answer queried the database.
-_[Pending: results of the current eval run, `eval/results/…`]_
+**Result** (`eval/results/2026-11-20-0944.md`): 8 / 8, right on all five answerable questions and declined all three
+unanswerable ones; every answer queried the database. Grading is automatic; two answers were hand-checked to the cent.
 
 **Before Finance relies on an LLM for a number.**
 - Every answer shows its SQL against the four tables, and the number reproduces from that SQL.
