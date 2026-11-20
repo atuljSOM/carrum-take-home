@@ -1,0 +1,47 @@
+# AI Usage Log (4b)
+
+**Tool:** Claude Code (Opus 5.5), VS Code
+
+---
+
+### 1. Project setup
+
+- **Asked:** create the project folder and set it up to the brief's requirements
+- **Did:** Python 3.11 venv, pinned dbt-core / dbt-duckdb / duckdb, in-repo `profiles.yml`, `as_of_date` var, CSV sources, README
+- **Checked:** `dbt debug` passed; source read all 1,189 episode rows
+
+### 2. Git repo
+
+- **Asked:** create a private repo on my personal GitHub
+- **Did:** created `atuljSOM/carrum-take-home`; set the personal identity for this repo only; pushed the scaffold
+- **Checked:** commit author and remote are the personal account
+
+### 3. DuckDB CLI
+
+- **Asked:** set up DuckDB for interactive SQL
+- **Did:** installed the DuckDB CLI via Homebrew (v2.0.0, same version as the Python package); the web UI (`duckdb -ui`) ships with it
+- **Checked:** ran a test query against a CSV
+
+### 4. CLAUDE.md
+
+- **Asked:** write a minimal CLAUDE.md (spec link, run commands, raw-data and as-of rules, working rules, empty structure/decisions sections); remove a stray file
+- **Did:** drafted it for review, then wrote it as approved; deleted an untracked file named `#` in the repo root
+- **Checked:** read the spec, AI log and repo layout before drafting; confirmed `#` was an empty DuckDB file before deleting it
+
+### 5. Raw-data profiling
+
+- **Asked:** profile every column of the five CSVs for duplicates, status history, date formats and `discount_pct` issues, with runnable queries; no code changes
+- **Did:** profiled with in-memory DuckDB; wrote a labelled query script outside the repo; found duplicate rows, status reversals, rows after the extract date, mixed date formats, mixed `discount_pct` scales, orphan keys and test records
+- **Checked:** reconciled the Q2 revenue gap to its causes ($115,000 = duplicates + reversals); re-ran the script after renaming its views and diffed the output
+
+### 6. Layer design and scaffold
+
+- **Asked:** evaluate design considerations I provided against the brief, flag conflicts; then scaffold sources, bronze as a data contract, empty silver and gold
+- **Did:** mapped staging / intermediate / marts onto silver `stg_` / `int_` / gold; built 5 sources, 5 bronze views with enforced contracts and 82 tests (6 custom); logic deferred
+- **Checked:** `dbt build` passes with the 10 expected warnings; broke copies of the CSVs 8 ways and each failed the build
+
+### 7. Medallion rules in README and CLAUDE.md
+
+- **Asked:** make the medallion structure a standing rule, briefly
+- **Did:** added short rule sets to CLAUDE.md and README; decided against a separate guidelines doc
+- **Checked:** edits landed in this repo only (the chat's file links pointed at another repo)
