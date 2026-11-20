@@ -1,0 +1,401 @@
+version: 2
+
+# Bronze = an exact copy of each raw extract, plus the data contract that copy is checked against.
+#
+# What the contract catches, and how it is enforced:
+#   1. Column drift (added, removed or renamed columns)  -> enforced model contract; fails the build.
+#   2. Missing, truncated or header-only extract          -> not_empty; error.
+#   3. Missing or malformed keys                          -> not_null, unique, matches_pattern on IDs; error.
+#   4. Values silver cannot type (bad numbers, dates)     -> castable_to / matches_pattern; error.
+#   5. New categorical values downstream logic ignores    -> accepted_values on statuses and fee types; error.
+#   6. A column the source stopped populating             -> not_all_null on optional columns; error.
+#   7. Re-delivered rows                                  -> no_exact_duplicate_rows; warn.
+#
+# Error vs warn: a test errors when a violation would break or silently change silver's logic,
+# and warns when it describes a known defect in this extract that silver is designed to handle.
+# Every warn-level test below states its known count, so a change in that count is visible.
+#
+# Every column is VARCHAR because the sources are read with all_varchar; the contract therefore
+# checks the column set, and the tests check whether the text inside each column can be typed.
+
+models:
+  # ---------------------------------------------------------------- salesforce_accounts
+  - name: bronze_salesforce_accounts
+    description: Exact copy of the Salesforce accounts extract (one row per account). Not deduplicated or cleaned.
+    config:
+      contract:
+        enforced: true
+    data_tests:
+      - not_empty
+      - no_exact_duplicate_rows:
+          config:
+            severity: warn
+    columns:
+      - name: account_id
+        data_type: varchar
+        description: Salesforce account ID (`EMP-nnn`).
+        data_tests:
+          - not_null
+          - unique
+          - matches_pattern:
+              arguments:
+                regex: 'EMP-\d{3}'
+      - name: account_name
+        data_type: varchar
+        description: Account name as entered in Salesforce.
+        data_tests:
+          - not_null
+          - no_untrimmed_values:
+              description: Known in this extract - 1 account (EMP-102) has a trailing space.
+              config:
+                severity: warn
+      - name: parent_account_id
+        data_type: varchar
+        description: Parent account. Top-level accounts point to themselves rather than being null.
+        data_tests:
+          - not_null
+          - matches_pattern:
+              arguments:
+                regex: 'EMP-\d{3}'
+      - name: industry
+        data_type: varchar
+        description: Industry of the employer.
+        data_tests:
+          - not_null
+      - name: funding_type
+        data_type: varchar
+        description: How the employer funds its health plan.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Self-funded', 'Level-funded']
+              config:
+                severity: warn
+
+  # ---------------------------------------------------------------- salesforce_programs
+  - name: bronze_salesforce_programs
+    description: Exact copy of the Salesforce programs extract (one row per employer benefit program).
+    config:
+      contract:
+        enforced: true
+    data_tests:
+      - not_empty
+      - no_exact_duplicate_rows:
+          config:
+            severity: warn
+    columns:
+      - name: program_id
+        data_type: varchar
+        description: Salesforce program ID (`PRG-nnn`).
+        data_tests:
+          - not_null
+          - unique
+          - matches_pattern:
+              arguments:
+                regex: 'PRG-\d{3}'
+      - name: account_id
+        data_type: varchar
+        description: Account that owns the program.
+        data_tests:
+          - not_null
+          - matches_pattern:
+              arguments:
+                regex: 'EMP-\d{3}'
+      - name: program_name
+        data_type: varchar
+        description: Program name.
+        data_tests:
+          - not_null
+      - name: service_line
+        data_type: varchar
+        description: Clinical service line the program covers.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Orthopedics & Spine', 'Bariatric', 'Oncology', 'Cardiac']
+              config:
+                severity: warn
+      - name: tpa_name
+        data_type: varchar
+        description: Third-party administrator for the program.
+        data_tests:
+          - not_null
+      - name: go_live_date
+        data_type: varchar
+        description: Date the program went live (ISO text).
+        data_tests:
+          - not_null
+          - castable_to:
+              arguments:
+                data_type: date
+      - name: term_end_date
+        data_type: varchar
+        description: Date the program term ends (ISO text).
+        data_tests:
+          - not_null
+          - castable_to:
+              arguments:
+                data_type: date
+
+  # ---------------------------------------------------------------- contract_fee_schedule
+  - name: bronze_contract_fee_schedule
+    description: Exact copy of the contracting system's fee schedule (one row per fee line).
+    config:
+      contract:
+        enforced: true
+    data_tests:
+      - not_empty
+      - no_exact_duplicate_rows:
+          config:
+            severity: warn
+    columns:
+      - name: fee_id
+        data_type: varchar
+        description: Fee line ID (`FEE-nnn`).
+        data_tests:
+          - not_null
+          - unique
+          - matches_pattern:
+              arguments:
+                regex: 'FEE-\d{3}'
+      - name: program_id
+        data_type: varchar
+        description: Program the fee line belongs to.
+        data_tests:
+          - not_null:
+              description: Known in this extract - 2 fee lines (FEE-390, FEE-490) have no program.
+              config:
+                severity: warn
+          - matches_pattern:
+              arguments:
+                regex: 'PRG-\d{3}'
+      - name: fee_type
+        data_type: varchar
+        description: CASE_RATE (per completed episode) or PLATFORM_FEE (per effective month).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['CASE_RATE', 'PLATFORM_FEE']
+      - name: rate
+        data_type: varchar
+        description: Rate in USD (numeric text).
+        data_tests:
+          - not_null
+          - castable_to:
+              arguments:
+                data_type: double
+      - name: projected_episodes
+        data_type: varchar
+        description: Projected episode volume over the fee line's full effective window. Expected only on CASE_RATE lines.
+        data_tests:
+          - not_all_null
+          - castable_to:
+              arguments:
+                data_type: double
+      - name: discount_pct
+        data_type: varchar
+        description: >
+          Discount entered by hand in the contracting tool. Blank on many lines. Values mix
+          fractions (0.1) and whole percents (12.0); the scale is resolved in silver.
+        data_tests:
+          - not_all_null
+          - castable_to:
+              arguments:
+                data_type: double
+      - name: effective_start
+        data_type: varchar
+        description: First day the fee line is effective (ISO text).
+        data_tests:
+          - not_null
+          - castable_to:
+              arguments:
+                data_type: date
+      - name: effective_end
+        data_type: varchar
+        description: Last day the fee line is effective (ISO text).
+        data_tests:
+          - not_null
+          - castable_to:
+              arguments:
+                data_type: date
+
+  # ---------------------------------------------------------------- care_platform_episodes
+  - name: bronze_care_platform_episodes
+    description: >
+      Exact copy of the care platform's episode status-change log (one row per status record as
+      delivered, extracted 2026-06-30). episode_id is NOT unique here: an episode has one row per
+      status change. Exact duplicates are kept as delivered.
+    config:
+      contract:
+        enforced: true
+    data_tests:
+      - not_empty
+      - no_exact_duplicate_rows:
+          description: Known in this extract - 22 rows are exact duplicates of another row.
+          config:
+            severity: warn
+    columns:
+      - name: episode_id
+        data_type: varchar
+        description: Episode ID (`EP-nnnnnn`). Repeats once per status change.
+        data_tests:
+          - not_null
+          - matches_pattern:
+              arguments:
+                regex: 'EP-\d{6}'
+      - name: member_id
+        data_type: varchar
+        description: Synthetic member token.
+        data_tests:
+          - not_null
+          - matches_pattern:
+              description: Known in this extract - 15 rows carry TEST-nnnn member IDs.
+              arguments:
+                regex: 'M-[0-9a-f]{10}'
+              config:
+                severity: warn
+      - name: fee_id
+        data_type: varchar
+        description: Fee line the episode bills against.
+        data_tests:
+          - not_null
+          - matches_pattern:
+              arguments:
+                regex: 'FEE-\d{3}'
+      - name: procedure_category
+        data_type: varchar
+        description: Surgical procedure category.
+        data_tests:
+          - not_null
+      - name: provider_id
+        data_type: varchar
+        description: Center of Excellence provider ID.
+        data_tests:
+          - not_null
+          - matches_pattern:
+              description: Known in this extract - 15 rows use provider PRV-TEST.
+              arguments:
+                regex: 'PRV-\d{3}'
+              config:
+                severity: warn
+      - name: surgery_date
+        data_type: varchar
+        description: Date of surgery as text. Mostly ISO; some rows use MM/DD/YYYY.
+        data_tests:
+          - not_null:
+              description: Known in this extract - 5 rows have no surgery date.
+              config:
+                severity: warn
+          - matches_pattern:
+              description: Error on any format silver cannot parse (only ISO and MM/DD/YYYY are handled).
+              arguments:
+                regex: '\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}'
+          - castable_to:
+              description: Known in this extract - 9 rows use MM/DD/YYYY instead of ISO.
+              arguments:
+                data_type: date
+              config:
+                severity: warn
+      - name: episode_status
+        data_type: varchar
+        description: Status written by this record.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['REFERRED', 'SCHEDULED', 'COMPLETED', 'CANCELLED']
+      - name: invoice_month
+        data_type: varchar
+        description: Month invoiced (`YYYY-MM`), populated by an upstream billing job. Null until invoiced.
+        data_tests:
+          - not_all_null
+          - matches_pattern:
+              arguments:
+                regex: '\d{4}-\d{2}'
+      - name: record_updated_at
+        data_type: varchar
+        description: When this status record was written (text timestamp).
+        data_tests:
+          - not_null
+          - castable_to:
+              arguments:
+                data_type: timestamp
+
+  # ---------------------------------------------------------------- netsuite_billing_adjustments
+  - name: bronze_netsuite_billing_adjustments
+    description: Exact copy of the NetSuite billing adjustments extract (one row per memo as delivered).
+    config:
+      contract:
+        enforced: true
+    data_tests:
+      - not_empty
+      - no_exact_duplicate_rows:
+          description: Known in this extract - 1 memo (CM-10491) is delivered twice.
+          config:
+            severity: warn
+    columns:
+      - name: memo_id
+        data_type: varchar
+        description: NetSuite memo ID (`CM-nnnnn`).
+        data_tests:
+          - not_null
+          - unique:
+              description: Known in this extract - CM-10491 appears twice (an exact duplicate).
+              config:
+                severity: warn
+          - matches_pattern:
+              arguments:
+                regex: 'CM-\d{5}'
+      - name: program_id
+        data_type: varchar
+        description: Program the adjustment applies to.
+        data_tests:
+          - not_null
+          - matches_pattern:
+              arguments:
+                regex: 'PRG-\d{3}'
+      - name: billing_month
+        data_type: varchar
+        description: Month the adjustment applies to. Mostly `YYYY-MM`; some rows use `YYYY-M` or `MM/YYYY`.
+        data_tests:
+          - not_null
+          - matches_pattern:
+              description: Error on any format silver cannot parse (only YYYY-MM, YYYY-M and MM/YYYY are handled).
+              arguments:
+                regex: '\d{4}-\d{1,2}|\d{2}/\d{4}'
+          - matches_pattern:
+              name: bronze_netsuite_billing_adjustments_billing_month_is_iso
+              description: Known in this extract - 2 rows are not YYYY-MM (CM-10442 `04/2026`, CM-10458 `2026-5`).
+              arguments:
+                regex: '\d{4}-\d{2}'
+              config:
+                severity: warn
+      - name: adjustment_usd
+        data_type: varchar
+        description: Adjustment amount in USD (numeric text). Credits are normally negative.
+        data_tests:
+          - not_null
+          - castable_to:
+              arguments:
+                data_type: double
+      - name: reason
+        data_type: varchar
+        description: Reason for the adjustment.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['invoice correction', 'goodwill credit', 'performance guarantee credit', 'savings guarantee true-up']
+              config:
+                severity: warn
+      - name: posted_date
+        data_type: varchar
+        description: Date Finance posted the memo (ISO text).
+        data_tests:
+          - not_null
+          - castable_to:
+              arguments:
+                data_type: date

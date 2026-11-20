@@ -1,18 +1,24 @@
 version: 2
 
-# Raw CSVs are read in place via dbt-duckdb external locations (no seeds).
+# The five raw CSV extracts, read in place by dbt-duckdb (no seeds, no copies of the files).
+# Every column is read as VARCHAR (all_varchar) so that type and format problems reach the
+# bronze contract tests as data instead of failing or being silently coerced at load time.
+# Typing, parsing and cleaning happen in silver.
 sources:
-  - name: raw
+  - name: raw_sources
+    description: Raw CSV extracts in `data/`, read as text. Not for direct querying; use the bronze models.
     meta:
-      external_location: "{{ var('data_dir') }}/{name}.csv"
+      external_location: "read_csv('{{ var('data_dir') }}/{name}.csv', header = true, all_varchar = true)"
     tables:
       - name: salesforce_accounts
-        description: Employer client accounts (Salesforce).
+        description: Employer client accounts from Salesforce. Some accounts are subsidiaries, unions or affiliated groups of another account.
       - name: salesforce_programs
-        description: One row per employer benefit program (Salesforce).
+        description: One row per employer benefit program, from Salesforce.
       - name: contract_fee_schedule
         description: Contract fee lines (CASE_RATE / PLATFORM_FEE) from the contracting system.
       - name: care_platform_episodes
-        description: Episode status-change log from the care platform, extracted 2026-06-30.
+        description: >
+          Episode status-change log from the care platform, extracted 2026-06-30. A new row is
+          written every time an episode changes status.
       - name: netsuite_billing_adjustments
-        description: Credits, guarantee true-ups and fees posted by Finance in NetSuite.
+        description: Credit memos, guarantee credits, savings guarantee true-ups and fees posted by Finance in NetSuite.

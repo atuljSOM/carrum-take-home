@@ -14,6 +14,23 @@ dbt debug
 dbt build
 ```
 
-The build writes `carrum.duckdb` in the repo root (override with `DBT_DUCKDB_PATH`).
+The build writes `carrum.duckdb` in the repo root (override with `DBT_DUCKDB_PATH`). Close any other
+DuckDB session on that file first (for example `duckdb -ui carrum.duckdb`); DuckDB allows only one writer.
+
+## Project layout (medallion)
+
+Data flows bronze → silver → gold. Each layer is a DuckDB schema and reads only the one below.
+
+| Schema | Brief's term | Holds |
+|---|---|---|
+| `bronze` | — | Exact copy of each CSV, plus a data contract that fails on drift |
+| `silver` | staging (`stg_`), intermediate (`int_`) | Typed and cleaned; one row per source record |
+| `gold` | marts | Business rules, revenue and pacing. **Query this schema only.** |
+
+### Expected warnings
+
+There are 10, all intentional: known defects in the raw extracts, each with its count in
+`models/bronze/_bronze.yml`. A changed count means the data changed. The "config paths match no
+models" warning clears once silver and gold have models.
 
 _Run instructions for Part 2 queries, Part 3 and docs to follow._
