@@ -147,3 +147,51 @@
 - **Asked:** fix the gaps the eval found, in the project, not the instruction
 - **Did:** AGENTS.md shows the read-only query command; the register names the employer behind each flagged memo
 - **Checked:** build passes; only the 2c output changed, and its memos tie to the 2a adjustments; re-ran the eval: every question passed and every answer queried the database
+
+### 25. findings.md draft
+
+- **Asked:** start the findings document while the eval runs
+- **Did:** drafted the 2c register, assumptions, the Part 3 write-up and Part 4; the 2a, 2b and 2c figures are generated from the output CSVs, and the latest eval results are left as a marked placeholder
+- **Checked:** spot-checked the generated tables against the CSVs and removed a figure I had computed by hand
+
+### 25. Personal details in eval transcripts
+
+- **Asked:** commit the eval results
+- **Did:** found the saved transcripts carried my local paths and personal Claude setup; the eval now keeps only the run settings and hides the home path, and the earlier transcripts were cleaned the same way
+- **Checked:** scanned every committed transcript for my name and email before committing; the grader still reads the cleaned files
+
+### 26. Showing the profiling work
+
+- **Asked:** confirm the data issues are documented specifically, not just named, and that the work behind them is visible
+- **Did:** every register row now names the affected records (computed on the build); moved the profiling script from my private notes into `scripts/` and referenced it from the findings
+- **Checked:** the profiling script runs clean from the repo root; build passes; only the 2c output changed, in its detail text
+
+### 27. Compact register in the findings
+
+- **Asked:** whether the findings need the full register when it is already a CSV
+- **Did:** kept the register in the findings, since Part 4 asks the document to cover it, but cut it to one generated line per issue with its effect, handling, test and fix; detection, effect basis and record IDs are routed to the CSV
+- **Checked:** every line is generated from the CSV; read the rendered table for wording
+
+### 28. 4a wording: what not to build
+
+- **Asked:** whether "no BI layer" contradicts the gold tables
+- **Did:** reworded: the gold tables are what BI reads; what waits is dashboards and any semantic layer that redefines metrics outside dbt
+- **Checked:** the rest of 4a is unchanged
+
+### 29. "With more time" list
+
+- **Asked:** why the eval should run in CI; then to update the list
+- **Did:** the eval bullet now says when it runs and why (a rename or reworded definition passes the build but can change an LLM's answer); the snapshot bullet covers fee schedule, program and account history and a frozen record of each close
+- **Checked:** both items match what the project does today (full rebuilds, no history beyond the episode log and memo posting dates)
+
+### 30. Part 4c rewrite
+
+- **Asked:** lead 4c with the AI's wrong handling of the missing surgery dates, shorten the Harrow point, and list what else was corrected
+- **Did:** 4c now tells the surgery-date catch (assistant's exclusion rule, overturned by independent re-derivation) and lists five other corrections in one line each
+- **Checked:** the dollar figure is read from the register CSV; each listed correction matches an entry in this log
+
+### 30. Part 4c: the duplicate-account catch
+
+- **Asked:** lead 4c with the assistant's unsupported claims about how account EMP-102 was created, keep the missing surgery date rule to two lines
+- **Did:** 4c now tells the EMP-102 story (an unsupported claim, an overcorrection, then the narrower claim the columns support) and the surgery-date catch in two lines, followed by the other corrections
+- **Checked:** confirmed in the data that EMP-102's normalized name, industry, funding type and parent match EMP-101 and that it alone owns PRG-202; the dollar figure is read from the register CSV

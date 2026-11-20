@@ -88,7 +88,9 @@ metrics as (
         (select coalesce(sum(r.source_row_count - 1), 0)
            from ep join rec as r on r.episode_id = ep.episode_id and r.record_updated_at = ep.current_status_at
           where ep.is_revenue_eligible)                                                   as pacing_completed_impact,
-        null::varchar                                                                     as detail
+        (select count(distinct episode_id) || ' episodes on ' || count(distinct fee_id) || ' fee lines; duplicated statuses: '
+                || string_agg(distinct episode_status, ', ' order by episode_status)
+           from rec where source_row_count > 1) as detail
 
     -- DQ-02 status log: completions later reversed (on or before the as-of date)
     union all select 'DQ-02',
@@ -101,7 +103,9 @@ metrics as (
         (select count(*) from ep
           where is_priceable and current_status <> 'COMPLETED'
             and episode_id in (select episode_id from rec where episode_status = 'COMPLETED' and not is_recorded_after_as_of)),
-        null
+        (select string_agg(episode_id || ' now ' || current_status, ', ' order by episode_id) from ep
+          where current_status <> 'COMPLETED'
+            and episode_id in (select episode_id from rec where episode_status = 'COMPLETED' and not is_recorded_after_as_of))
 
     -- DQ-03 records dated after the extract / as-of date
     union all select 'DQ-03',
@@ -121,7 +125,9 @@ metrics as (
         (select -coalesce(sum(net_rate), 0) from ep where is_revenue_eligible and in_q and surgery_date_source_format = 'MM/DD/YYYY'),
         null,
         (select -count(*) from ep where is_revenue_eligible and surgery_date_source_format = 'MM/DD/YYYY'),
-        null
+        (select 'surgery months ' || strftime(min(surgery_date), '%Y-%m') || ' to ' || strftime(max(surgery_date), '%Y-%m')
+                || '; ' || count(distinct episode_id) || ' episodes'
+           from rec where surgery_date_source_format = 'MM/DD/YYYY')
 
     -- DQ-05 completed episodes with no surgery date
     union all select 'DQ-05',
@@ -129,7 +135,8 @@ metrics as (
         (select -coalesce(sum(net_rate), 0) from ep where is_revenue_eligible and in_q and surgery_month_source = 'invoice_month_fallback'),
         null,
         (select -count(*) from ep where is_revenue_eligible and surgery_month_source = 'invoice_month_fallback'),
-        null
+        (select string_agg(episode_id || ' invoiced ' || coalesce(strftime(invoice_month, '%Y-%m'), 'never'), ', ' order by episode_id)
+           from ep where surgery_date is null and current_status = 'COMPLETED')
 
     -- DQ-06 test records on a fee line not in the schedule
     union all select 'DQ-06',
@@ -142,7 +149,8 @@ metrics as (
     union all select 'DQ-07',
         (select count(*) from ep where fee_type = 'PLATFORM_FEE' and current_status = 'COMPLETED'),
         (select coalesce(sum(net_rate), 0) from ep where fee_type = 'PLATFORM_FEE' and current_status = 'COMPLETED' and in_q),
-        null, 0, null
+        null, 0, (select string_agg(episode_id, ', ' order by episode_id) || ' on ' || string_agg(distinct fee_id, ', ' order by fee_id)
+           from ep where fee_type = 'PLATFORM_FEE' and current_status = 'COMPLETED')
 
     -- DQ-08 completed before the fee line's effective window
     union all select 'DQ-08',
@@ -168,14 +176,15 @@ metrics as (
         (select count(*) from fee where discount_pct_raw is null),
         (select -coalesce(sum(rev.net_revenue_usd), 0) from rev join fee using (fee_id)
           where rev.in_q and fee.discount_pct_raw is null),
-        null, 0, null
+        null, 0, (select string_agg(fee_id, ', ' order by fee_id) from fee where discount_pct_raw is null)
 
     -- DQ-11 discount on a platform-fee line
     union all select 'DQ-11',
         (select count(*) from fee where fee_type = 'PLATFORM_FEE' and discount_rate > 0),
         (select coalesce(sum(rev.discount_usd), 0) from rev join fee using (fee_id)
           where rev.in_q and fee.fee_type = 'PLATFORM_FEE' and fee.discount_rate > 0),
-        null, 0, null
+        null, 0, (select string_agg(fee_id || ' discount ' || discount_pct_raw || ' on a $' || rate_usd || ' monthly platform fee', '; ' order by fee_id)
+           from fee where fee_type = 'PLATFORM_FEE' and discount_rate > 0)
 
     -- DQ-12 fee lines with no program
     union all select 'DQ-12',
@@ -261,7 +270,15 @@ metrics as (
         (select coalesce(sum(net_rate) filter (where invoice_month between p.q_start and p.q_last_month), 0)
               - coalesce(sum(net_rate) filter (where in_q), 0)
            from ep cross join params as p where is_revenue_eligible),
-        null, 0, null
+        null, 0, (select count(*) filter (where surgery_month < p.q_start and invoice_month >= p.q_start)
+                || ' surgeries before the quarter invoiced in it; '
+                || count(*) filter (where in_q and invoice_month > p.q_last_month)
+                || ' quarter surgeries invoiced after it; '
+                || count(*) filter (where not (surgery_month < p.q_start and invoice_month >= p.q_start)
+                                      and not (in_q and invoice_month > p.q_last_month))
+                || ' lag within a quarter (no effect on the quarter)'
+           from ep cross join params as p
+          where is_revenue_eligible and surgery_month_source = 'surgery_date' and invoice_month <> surgery_month)
 
     -- DQ-22 SCHEDULED episodes whose surgery date has passed
     union all select 'DQ-22',
