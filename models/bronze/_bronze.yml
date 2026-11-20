@@ -27,9 +27,6 @@ models:
         enforced: true
     data_tests:
       - not_empty
-      - no_exact_duplicate_rows:
-          config:
-            severity: warn
     columns:
       - name: account_id
         data_type: varchar
@@ -60,18 +57,9 @@ models:
       - name: industry
         data_type: varchar
         description: Industry of the employer.
-        data_tests:
-          - not_null
       - name: funding_type
         data_type: varchar
         description: How the employer funds its health plan.
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['Self-funded', 'Level-funded']
-              config:
-                severity: warn
 
   # ---------------------------------------------------------------- salesforce_programs
   - name: bronze_salesforce_programs
@@ -81,9 +69,6 @@ models:
         enforced: true
     data_tests:
       - not_empty
-      - no_exact_duplicate_rows:
-          config:
-            severity: warn
     columns:
       - name: program_id
         data_type: varchar
@@ -105,23 +90,12 @@ models:
       - name: program_name
         data_type: varchar
         description: Program name.
-        data_tests:
-          - not_null
       - name: service_line
         data_type: varchar
         description: Clinical service line the program covers.
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['Orthopedics & Spine', 'Bariatric', 'Oncology', 'Cardiac']
-              config:
-                severity: warn
       - name: tpa_name
         data_type: varchar
         description: Third-party administrator for the program.
-        data_tests:
-          - not_null
       - name: go_live_date
         data_type: varchar
         description: Date the program went live (ISO text).
@@ -147,9 +121,6 @@ models:
         enforced: true
     data_tests:
       - not_empty
-      - no_exact_duplicate_rows:
-          config:
-            severity: warn
     columns:
       - name: fee_id
         data_type: varchar
@@ -251,12 +222,6 @@ models:
         description: Synthetic member token.
         data_tests:
           - not_null
-          - matches_pattern:
-              description: Known in this extract - 15 rows carry TEST-nnnn member IDs.
-              arguments:
-                regex: 'M-[0-9a-f]{10}'
-              config:
-                severity: warn
       - name: fee_id
         data_type: varchar
         description: Fee line the episode bills against.
@@ -268,19 +233,11 @@ models:
       - name: procedure_category
         data_type: varchar
         description: Surgical procedure category.
-        data_tests:
-          - not_null
       - name: provider_id
         data_type: varchar
         description: Center of Excellence provider ID.
         data_tests:
           - not_null
-          - matches_pattern:
-              description: Known in this extract - 15 rows use provider PRV-TEST.
-              arguments:
-                regex: 'PRV-\d{3}'
-              config:
-                severity: warn
       - name: surgery_date
         data_type: varchar
         description: Date of surgery as text. Mostly ISO; some rows use MM/DD/YYYY.
@@ -342,10 +299,6 @@ models:
         description: NetSuite memo ID (`CM-nnnnn`).
         data_tests:
           - not_null
-          - unique:
-              description: Known in this extract - CM-10491 appears twice (an exact duplicate).
-              config:
-                severity: warn
           - matches_pattern:
               arguments:
                 regex: 'CM-\d{5}'
@@ -384,13 +337,6 @@ models:
       - name: reason
         data_type: varchar
         description: Reason for the adjustment.
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['invoice correction', 'goodwill credit', 'performance guarantee credit', 'savings guarantee true-up']
-              config:
-                severity: warn
       - name: posted_date
         data_type: varchar
         description: Date Finance posted the memo (ISO text).

@@ -72,7 +72,7 @@
 
 ### 12. Blind re-derivation of Part 2 and the missing surgery date rule
 
-- **Asked:** three independent agents, given only the brief and the CSVs, to answer 2a and 2b in plain SQL, then compare their results with the gold marts
+- **Asked:** two independent agents, given only the brief and the CSVs, to answer 2a and 2b in plain SQL, then compare their results with the gold marts
 - **Did:** every 2a difference traced to a documented choice, not a bug; all three agents reported completed episodes with no surgery date in their invoice month, and I agreed to switch from excluding them to that fallback, flagged in a new column
 - **Checked:** `dbt build` and `dbt docs generate` pass; the new unit test was mutation-checked; with the same choices, gold matches an agent's result for every employer and month to the cent
 
@@ -81,3 +81,21 @@
 - **Asked:** build the saved 2a query and its CSV output
 - **Did:** added a dbt analysis that only filters and totals the employer × month mart (month rows, employer Q2 totals, grand total), and a script that exports every compiled analysis to `outputs/`; documented the run steps in the README
 - **Checked:** grand total matches the figure verified after the surgery-date fallback; subtotals are produced by the same query as the month rows; ran from a scratch build because the DuckDB UI held the lock
+
+### 14. Relationship tests, error/warn policy and singular tests
+
+- **Asked:** proceed with the deferred test layer
+- **Did:** added relationship, accepted-values and not-null tests to silver and gold under a stated error/warn policy (warn only for orphans the model already handles); added four reconciliation tests and one discount invariant as singular tests; left the open edge-case questions untested
+- **Checked:** `dbt build` passes with only the expected warnings; mutated a copy of the built database once per failure mode and confirmed each singular test caught it, then confirmed all return nothing on the real data
+
+### 15. Test trim
+
+- **Asked:** whether the tests hold value or are padding; then trim and log
+- **Did:** removed tests that repeated a defect already warned elsewhere, could not fail by construction, covered columns no rule reads, or restated a model's own SQL; each known defect now warns once, at the first layer where it is visible
+- **Checked:** `dbt build` passes with one warning per distinct defect; kept every unit test and the reconciliation tests that were mutation-checked
+
+### 16. README trim
+
+- **Asked:** make the README lean, each section minimally worded
+- **Did:** cut it to setup, layers, test policy and Part 2 commands; grain and rules now point to the model docs instead of being repeated
+- **Checked:** every command kept is one the build and export actually use

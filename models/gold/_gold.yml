@@ -1,8 +1,15 @@
 version: 2
 
 # Gold: business rules, conformed dimensions and the marts that answer questions.
-# Query this schema only. Data tests below cover grain only for now (reconciliation tests to come);
-# unit tests at the end cover each business rule.
+# Query this schema only.
+#
+# Error vs warn: a test errors when a violation would make a reported number wrong without anyone
+# noticing (broken grain, an unknown category, a key that cannot join, a reconciliation that does
+# not tie). It warns, with the known count, for a defect the model already handles (an orphan key
+# flagged and routed to 'Unattributed' or excluded). `dbt build` passing therefore means the
+# revenue numbers are internally consistent. Singular reconciliation tests live in tests/; unit
+# tests at the end of this file cover each business rule on mocked rows. Each known defect warns
+# once, in silver or bronze, so gold carries no warn-level tests.
 
 models:
   # ------------------------------------------------------------------ dimensions
@@ -35,6 +42,12 @@ models:
         data_tests: [not_null, unique]
       - name: employer_id
         description: Ultimate parent employer of the program's account.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('gold_dim_employers')
+                field: account_id
 
   - name: gold_dim_months
     description: >
@@ -60,6 +73,11 @@ models:
         data_tests: [not_null, unique]
       - name: fee_type
         description: CASE_RATE (per completed episode) or PLATFORM_FEE (per effective month).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['CASE_RATE', 'PLATFORM_FEE']
       - name: employer_id
         description: Employer the fee line rolls up to; 'UNATTRIBUTED' when it has no valid program.
       - name: rate_usd
@@ -97,6 +115,13 @@ models:
         data_tests: [not_null, unique]
       - name: current_status
         description: Status of the latest record on or before var('as_of_date').
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['REFERRED', 'SCHEDULED', 'COMPLETED', 'CANCELLED']
+      - name: fee_id
+        description: Fee line the episode bills against. FEE-999 (test data, not in the fee schedule) is warned in silver and excluded here.
       - name: surgery_month
         description: >
           First day of the surgery month. This is the reporting month for case revenue (not
@@ -124,6 +149,7 @@ models:
         description: Why a completed episode earns no case revenue. Null when eligible or not completed.
       - name: is_revenue_eligible
         description: Completed and not excluded. Exactly the episodes counted in case revenue.
+        data_tests: [not_null]
 
   - name: gold_fact_revenue_monthly
     description: >
@@ -140,8 +166,28 @@ models:
         data_tests: [not_null, unique]
       - name: revenue_component
         description: CASE_RATE, PLATFORM_FEE or ADJUSTMENT.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['CASE_RATE', 'PLATFORM_FEE', 'ADJUSTMENT']
+      - name: fee_id
+        description: Fee line for CASE_RATE and PLATFORM_FEE rows; null for ADJUSTMENT rows.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('gold_dim_fee_lines')
+                field: fee_id
+      - name: program_id
+        description: Program of the fee line or memo. Null for orphan fee lines; PRG-299 (memo CM-10812, warned in silver) has no program in Salesforce and is reported as 'Unattributed'.
       - name: revenue_month
         description: First day of the month the revenue is reported in.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('gold_dim_months')
+                field: month_start
       - name: employer_id
         description: Ultimate parent employer; 'UNATTRIBUTED' when the fee line or memo has no valid program.
       - name: episode_count
@@ -154,6 +200,7 @@ models:
         description: gross_usd x discount_rate, rounded to cents. Zero for adjustments.
       - name: net_revenue_usd
         description: gross_usd - discount_usd. Sum this for recognized revenue.
+        data_tests: [not_null]
       - name: adjustment_usd_posted_after_as_of
         description: Part of an ADJUSTMENT row's amount posted after var('as_of_date').
 
@@ -183,6 +230,7 @@ models:
         description: NetSuite adjustments for the employer's programs in the billing month.
       - name: total_revenue_usd
         description: case_revenue_usd + platform_fee_revenue_usd + adjustments_usd. Recognized revenue.
+        data_tests: [not_null]
       - name: adjustments_posted_after_as_of_usd
         description: Part of adjustments_usd posted after var('as_of_date') (included, flagged).
 
