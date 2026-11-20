@@ -7,9 +7,13 @@
 --
 -- is_revenue_eligible marks the completed episodes that earn the case rate. A completed episode
 -- is excluded, with the reason in revenue_exclusion_reason, when it is a test record, bills to a
--- fee line that is not in the fee schedule, bills to a platform-fee line, has no surgery date,
--- or its surgery date is outside its fee line's effective window. Orphan fee lines (no program)
--- stay eligible and roll up to the "Unattributed" employer.
+-- fee line that is not in the fee schedule, bills to a platform-fee line, has neither a surgery
+-- date nor an invoice month, or its surgery month is outside its fee line's effective window.
+-- Orphan fee lines (no program) stay eligible and roll up to the "Unattributed" employer.
+--
+-- surgery_month is the reporting month. When surgery_date is missing it falls back to
+-- invoice_month (flagged in surgery_month_source): the episode is completed, so the revenue is
+-- earned; only its month is uncertain (invoice_month lags surgery month for late-month surgeries).
 
 with records as (
     select * from {{ ref('silver_stg_care_platform_episodes') }}
@@ -54,7 +58,14 @@ episodes as (
         current_record.procedure_category,
         current_record.provider_id,
         current_record.surgery_date,
-        cast(date_trunc('month', current_record.surgery_date) as date) as surgery_month,
+        coalesce(
+            cast(date_trunc('month', current_record.surgery_date) as date),
+            current_record.invoice_month
+        )                                                              as surgery_month,
+        case
+            when current_record.surgery_date is not null  then 'surgery_date'
+            when current_record.invoice_month is not null then 'invoice_month_fallback'
+        end                                                            as surgery_month_source,
         current_record.surgery_date_source_format,
         current_record.episode_status                                  as current_status,
         current_record.record_updated_at                               as current_status_at,
@@ -69,8 +80,16 @@ episodes as (
         fee_lines.fee_id is null                                       as is_unknown_fee_line,
         coalesce(fee_lines.is_orphan, false)                           as is_orphan_fee_line,
         current_record.surgery_date is null                            as is_surgery_date_missing,
-        current_record.surgery_date < fee_lines.effective_start
-            or current_record.surgery_date > fee_lines.effective_end   as is_surgery_outside_fee_window
+        -- With a surgery date, compare the date; with the invoice_month fallback, only the month
+        -- is known, so it is outside only when that whole month misses the window.
+        case
+            when current_record.surgery_date is not null then
+                current_record.surgery_date < fee_lines.effective_start
+                or current_record.surgery_date > fee_lines.effective_end
+            else
+                current_record.invoice_month > fee_lines.effective_end
+                or last_day(current_record.invoice_month) < fee_lines.effective_start
+        end                                                            as is_surgery_outside_fee_window
     from current_record
     join history on history.episode_id = current_record.episode_id
     left join fee_lines on fee_lines.fee_id = current_record.fee_id
@@ -83,7 +102,7 @@ select
         when is_test_record                                  then 'test record'
         when is_unknown_fee_line                             then 'fee line not in fee schedule'
         when fee_type = 'PLATFORM_FEE'                       then 'billed to a platform-fee line'
-        when is_surgery_date_missing                         then 'surgery date missing'
+        when surgery_month is null                           then 'surgery date and invoice month missing'
         when coalesce(is_surgery_outside_fee_window, false)  then 'surgery outside fee line window'
     end                                                      as revenue_exclusion_reason,
     current_status = 'COMPLETED' and revenue_exclusion_reason is null as is_revenue_eligible

@@ -69,3 +69,9 @@
 - **Asked:** dbt unit tests (mocked inputs) for every business rule and data-issue fix built so far, without changing model SQL
 - **Did:** added unit tests to the silver and gold yml, one rule each with edge cases (as-of boundaries, inclusive fee windows, partial months, exclusion precedence); left rules the brief and docs don't settle as open questions instead of encoding a guess
 - **Checked:** `dbt build` passes; mutation-checked every test (broke the covered logic, confirmed the test failed, restored the SQL)
+
+### 12. Blind re-derivation of Part 2 and the missing surgery date rule
+
+- **Asked:** three independent agents, given only the brief and the CSVs, to answer 2a and 2b in plain SQL, then compare their results with the gold marts
+- **Did:** every 2a difference traced to a documented choice, not a bug; all three agents reported completed episodes with no surgery date in their invoice month, and I agreed to switch from excluding them to that fallback, flagged in a new column
+- **Checked:** `dbt build` and `dbt docs generate` pass; the new unit test was mutation-checked; with the same choices, gold matches an agent's result for every employer and month to the cent

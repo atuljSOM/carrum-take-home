@@ -86,9 +86,11 @@ models:
       summarized in later_record_count / latest_status_in_extract.
       is_revenue_eligible marks completed episodes that earn the case rate. A completed episode is
       excluded, in this order, when it is a test record, bills to a fee line not in the fee
-      schedule, bills to a platform-fee line (not remapped to a case-rate line), has no surgery
-      date (no fallback to invoice_month), or its surgery date is outside its fee line's effective
-      window. Episodes on orphan fee lines stay eligible and roll up to 'UNATTRIBUTED'.
+      schedule, bills to a platform-fee line (not remapped to a case-rate line), has neither a
+      surgery date nor an invoice month, or its surgery month is outside its fee line's effective
+      window. A completed episode with no surgery date is reported in its invoice_month (flagged
+      in surgery_month_source): the case-rate rule makes the revenue earned, and only its month is
+      uncertain. Episodes on orphan fee lines stay eligible and roll up to 'UNATTRIBUTED'.
     columns:
       - name: episode_id
         description: Episode ID.
@@ -98,9 +100,22 @@ models:
       - name: surgery_month
         description: >
           First day of the surgery month. This is the reporting month for case revenue (not
-          invoice_month). Null when the surgery date is missing; such episodes earn no revenue.
+          invoice_month). When the surgery date is missing, falls back to invoice_month (see
+          surgery_month_source). invoice_month lags the surgery month for some late-month
+          surgeries, so a fallback month may be one month late. Null only when both are missing;
+          such episodes earn no revenue.
+      - name: surgery_month_source
+        description: >
+          Where surgery_month came from: 'surgery_date', or 'invoice_month_fallback' when the
+          surgery date is missing. Null when both are missing.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['surgery_date', 'invoice_month_fallback']
       - name: invoice_month
-        description: Month invoiced by the upstream billing job. Informational; not used for reporting.
+        description: >
+          Month invoiced by the upstream billing job. Used as the reporting month only when the
+          surgery date is missing (surgery_month_source = 'invoice_month_fallback').
       - name: employer_id
         description: Employer via fee line -> program -> account roll-up; 'UNATTRIBUTED' for orphan fee lines; null for fee lines not in the schedule.
       - name: is_status_changed_after_as_of
@@ -325,12 +340,42 @@ unit_tests:
       rows:
         - {episode_id: EP-1, surgery_month: 2026-06-01, is_revenue_eligible: true}
 
+  - name: ut_fact_episodes_missing_surgery_date_falls_back_to_invoice_month
+    description: >
+      A completed episode with no surgery date is reported in its invoice_month, flagged as a
+      fallback, and stays eligible. The fallback month is checked against the fee window by
+      whole month: May invoice on a line starting June 1 is outside; June invoice is inside, also
+      on a line starting mid-June (the month overlaps the window).
+    model: gold_fact_episodes
+    overrides:
+      vars: {as_of_date: "2026-06-30"}
+    given:
+      - input: ref('silver_stg_care_platform_episodes')
+        rows:
+          - {episode_id: EP-FB,   fee_id: FEE-1,   episode_status: COMPLETED, surgery_date: null, invoice_month: 2026-04-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-IN,   fee_id: FEE-JUN, episode_status: COMPLETED, surgery_date: null, invoice_month: 2026-06-01, record_updated_at: "2026-06-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-OUT,  fee_id: FEE-JUN, episode_status: COMPLETED, surgery_date: null, invoice_month: 2026-05-01, record_updated_at: "2026-05-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-DATE, fee_id: FEE-1,   episode_status: COMPLETED, surgery_date: 2026-03-31, invoice_month: 2026-04-01, record_updated_at: "2026-04-02 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+          - {episode_id: EP-MID,  fee_id: FEE-MID, episode_status: COMPLETED, surgery_date: null, invoice_month: 2026-06-01, record_updated_at: "2026-06-20 09:00:00", is_recorded_after_as_of: false, is_test_record: false, is_duplicated_in_source: false}
+      - input: ref('gold_dim_fee_lines')
+        rows:
+          - {fee_id: FEE-1,   fee_type: CASE_RATE, effective_start: 2026-01-01, effective_end: 2026-12-31, is_orphan: false}
+          - {fee_id: FEE-JUN, fee_type: CASE_RATE, effective_start: 2026-06-01, effective_end: 2026-12-31, is_orphan: false}
+          - {fee_id: FEE-MID, fee_type: CASE_RATE, effective_start: 2026-06-15, effective_end: 2026-12-31, is_orphan: false}
+    expect:
+      rows:
+        - {episode_id: EP-FB,   surgery_month: 2026-04-01, surgery_month_source: invoice_month_fallback, is_revenue_eligible: true}
+        - {episode_id: EP-IN,   surgery_month: 2026-06-01, surgery_month_source: invoice_month_fallback, is_revenue_eligible: true}
+        - {episode_id: EP-OUT,  surgery_month: 2026-05-01, surgery_month_source: invoice_month_fallback, is_revenue_eligible: false}
+        - {episode_id: EP-DATE, surgery_month: 2026-03-01, surgery_month_source: surgery_date,           is_revenue_eligible: true}
+        - {episode_id: EP-MID,  surgery_month: 2026-06-01, surgery_month_source: invoice_month_fallback, is_revenue_eligible: true}
+
   - name: ut_fact_episodes_revenue_exclusion_reasons
     description: >
       Only a completed episode earns the case rate. A completed episode is excluded, with its
       reason, when it is a test record, bills to a fee line not in the schedule, bills to a
-      platform-fee line, has no surgery date, or its surgery is outside the fee window. A
-      non-completed episode has no reason and is not eligible.
+      platform-fee line, has neither a surgery date nor an invoice month, or its surgery is
+      outside the fee window. A non-completed episode has no reason and is not eligible.
     model: gold_fact_episodes
     overrides:
       vars: {as_of_date: "2026-06-30"}
@@ -354,7 +399,7 @@ unit_tests:
         - {episode_id: EP-TEST,   revenue_exclusion_reason: test record,                     is_revenue_eligible: false}
         - {episode_id: EP-UNK,    revenue_exclusion_reason: fee line not in fee schedule,    is_revenue_eligible: false}
         - {episode_id: EP-PLAT,   revenue_exclusion_reason: billed to a platform-fee line,   is_revenue_eligible: false}
-        - {episode_id: EP-NODATE, revenue_exclusion_reason: surgery date missing,            is_revenue_eligible: false}
+        - {episode_id: EP-NODATE, revenue_exclusion_reason: surgery date and invoice month missing, is_revenue_eligible: false}
         - {episode_id: EP-OUT,    revenue_exclusion_reason: surgery outside fee line window, is_revenue_eligible: false}
         - {episode_id: EP-SCHED,  revenue_exclusion_reason: null,                            is_revenue_eligible: false}
 
