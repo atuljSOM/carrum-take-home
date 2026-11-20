@@ -45,3 +45,9 @@
 - **Asked:** make the medallion structure a standing rule, briefly
 - **Did:** added short rule sets to CLAUDE.md and README; decided against a separate guidelines doc
 - **Checked:** edits landed in this repo only (the chat's file links pointed at another repo)
+
+### 8. Branch, commits and PR
+
+- **Asked:** commit the scaffold and bronze models on a branch and open a PR
+- **Did:** two commits on `scaffold-bronze-layer` (docs, then scaffold); PR #1 with What / Why / Testing
+- **Checked:** `dbt parse` clean before committing; commits use the personal identity; `notes/` stayed out
